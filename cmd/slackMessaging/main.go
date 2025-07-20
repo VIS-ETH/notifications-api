@@ -13,8 +13,8 @@ import (
 )
 
 var (
-	slackSecret = flag.String("slack-secret", os.Getenv("RUNTIME_SERVIS_SLACK_API_KEY"), "slack message-api key")
-	port        = flag.String("port", os.Getenv("RUNTIME_PORT"), "runtime grpc port")
+	slackSecret = flag.String("slack-secret", os.Getenv("RUNTIME_SLACK_API_KEY"), "slack message-api key")
+	port        = flag.String("port", os.Getenv("RUNTIME_SERVIS_SELF_PORT"), "runtime grpc port")
 )
 
 func main() {

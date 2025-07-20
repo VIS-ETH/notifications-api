@@ -1,0 +1,10 @@
+programs:
+  - name: slackMessaging
+    path: /app/messenger
+    user: app-user
+    group: app-user
+    capabilities:
+      - CAP_NET_BIND_SERVICE
+    ENV:
+      - RUNTIME_SERVIS_SELF_PORT:
+      - RUNTIME_SLACK_API_KEY:
