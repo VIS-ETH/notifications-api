@@ -1,6 +1,8 @@
 syntax = "proto3";
 
-package messaging
+package messaging;
+
+option go_package = "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cat/sip-vis-cat-apps/2message2api/internal/pb;pb";
 
 service Messenger {
     rpc SendMessage (SendRequest) returns (SendResponse);

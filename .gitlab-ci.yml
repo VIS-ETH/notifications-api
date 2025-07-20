@@ -1,3 +1,5 @@
+variables:
+  GOPRIVATE: "gitlab.ethz.ch"
 stages: [lint, test, build]
 lint:
   image: golangci/golangci-lint:v1.53
@@ -9,4 +11,4 @@ test:
 build:
   image: golang:1.21
   script:
-    - go build -o messenger ./cmd/your-service
+    - go build -o messenger ./cmd/slackMessaging
