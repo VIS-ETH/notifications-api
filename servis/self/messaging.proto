@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package messaging
+
+service Messenger {
+    rpc SendMessage (SendRequest) returns (SendResponse);
+}
+
+message SendRequest {
+    string email = 1;
+    string text = 2;
+}
+
+message SendResponse {
+    bool success = 1;
+    string error = 2;
+}
