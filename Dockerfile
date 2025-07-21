@@ -4,7 +4,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 # TODO do i need to run gen_proto.sh?
-RUN CGO_ENABLED=0 GOOS=linux go build -o messenger ./cmd/slackMessaging
+RUN CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -o messenger ./cmd/slackMessaging
 
 
 FROM eu.gcr.io/vseth-public/base:foxtrott AS base
