@@ -7,12 +7,9 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o messenger ./cmd/slackMessaging
 
 
-FROM eu.gcr.io/vseth-public/base:delta AS base
-# TODO Ok what is the most basic image? I feel like delta might be based on message_api
+FROM eu.gcr.io/vseth-public/base:foxtrott AS base
 WORKDIR /app
 
 COPY --from=builder /app/messenger .
 
 COPY cinit.yml /etc/cinit.d/slackMessaging.yml
-
-ENTRYPOINT [ "/app/messenger" ]
