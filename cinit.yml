@@ -5,6 +5,7 @@ programs:
     group: app-user
     capabilities:
       - CAP_NET_BIND_SERVICE
-    ENV:
+    env:
       - RUNTIME_SERVIS_SELF_PORT:
       - RUNTIME_SLACK_API_KEY:
+

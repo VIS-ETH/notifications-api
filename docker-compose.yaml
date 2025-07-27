@@ -1,0 +1,8 @@
+services:
+  two-message-two-api:
+    build: .
+    ports:
+      - 6781:6781
+    environment:
+      RUNTIME_SERVIS_SELF_PORT: 6781
+    env_file: .env.local
