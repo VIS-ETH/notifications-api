@@ -16,10 +16,10 @@ func NewMessengerServer(sc *slack.Client) *MessengerServer {
 	return &MessengerServer{slackClient: sc}
 }
 
-func (s *MessengerServer) SendMessage(ctx context.Context, req *pb.SendRequest) (*pb.SendResponse, error) {
-	if err := s.slackClient.Send(ctx, req.Email, req.Text); err != nil {
+func (s *MessengerServer) SendSlackMessage(ctx context.Context, req *pb.SendSlackRequest) (*pb.SendSlackResponse, error) {
+	if err := s.slackClient.Send(ctx, req.Email, req.BlocksJson, req.FallbackText); err != nil {
 		// TODO so here we say nah we are totally fine lmao
-		return &pb.SendResponse{Success: false, Error: err.Error()}, nil
+		return &pb.SendSlackResponse{Success: false, Error: err.Error()}, nil
 	}
-	return &pb.SendResponse{Success: true}, nil
+	return &pb.SendSlackResponse{Success: true}, nil
 }

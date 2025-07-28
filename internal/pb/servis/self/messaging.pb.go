@@ -21,28 +21,31 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type SendRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
-	Text          string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+type SendSlackRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Email string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	// JSON-encoded array of Slack Block Kit blocks
+	BlocksJson string `protobuf:"bytes,2,opt,name=blocks_json,json=blocksJson,proto3" json:"blocks_json,omitempty"`
+	// Fallback plain-text message
+	FallbackText  string `protobuf:"bytes,3,opt,name=fallback_text,json=fallbackText,proto3" json:"fallback_text,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SendRequest) Reset() {
-	*x = SendRequest{}
+func (x *SendSlackRequest) Reset() {
+	*x = SendSlackRequest{}
 	mi := &file_servis_self_messaging_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SendRequest) String() string {
+func (x *SendSlackRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SendRequest) ProtoMessage() {}
+func (*SendSlackRequest) ProtoMessage() {}
 
-func (x *SendRequest) ProtoReflect() protoreflect.Message {
+func (x *SendSlackRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_servis_self_messaging_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -54,26 +57,33 @@ func (x *SendRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SendRequest.ProtoReflect.Descriptor instead.
-func (*SendRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use SendSlackRequest.ProtoReflect.Descriptor instead.
+func (*SendSlackRequest) Descriptor() ([]byte, []int) {
 	return file_servis_self_messaging_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *SendRequest) GetEmail() string {
+func (x *SendSlackRequest) GetEmail() string {
 	if x != nil {
 		return x.Email
 	}
 	return ""
 }
 
-func (x *SendRequest) GetText() string {
+func (x *SendSlackRequest) GetBlocksJson() string {
 	if x != nil {
-		return x.Text
+		return x.BlocksJson
 	}
 	return ""
 }
 
-type SendResponse struct {
+func (x *SendSlackRequest) GetFallbackText() string {
+	if x != nil {
+		return x.FallbackText
+	}
+	return ""
+}
+
+type SendSlackResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
 	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
@@ -81,20 +91,20 @@ type SendResponse struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SendResponse) Reset() {
-	*x = SendResponse{}
+func (x *SendSlackResponse) Reset() {
+	*x = SendSlackResponse{}
 	mi := &file_servis_self_messaging_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SendResponse) String() string {
+func (x *SendSlackResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SendResponse) ProtoMessage() {}
+func (*SendSlackResponse) ProtoMessage() {}
 
-func (x *SendResponse) ProtoReflect() protoreflect.Message {
+func (x *SendSlackResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_servis_self_messaging_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -106,19 +116,19 @@ func (x *SendResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SendResponse.ProtoReflect.Descriptor instead.
-func (*SendResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use SendSlackResponse.ProtoReflect.Descriptor instead.
+func (*SendSlackResponse) Descriptor() ([]byte, []int) {
 	return file_servis_self_messaging_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *SendResponse) GetSuccess() bool {
+func (x *SendSlackResponse) GetSuccess() bool {
 	if x != nil {
 		return x.Success
 	}
 	return false
 }
 
-func (x *SendResponse) GetError() string {
+func (x *SendSlackResponse) GetError() string {
 	if x != nil {
 		return x.Error
 	}
@@ -129,15 +139,17 @@ var File_servis_self_messaging_proto protoreflect.FileDescriptor
 
 const file_servis_self_messaging_proto_rawDesc = "" +
 	"\n" +
-	"\x1bservis/self/messaging.proto\x12\tmessaging\"7\n" +
-	"\vSendRequest\x12\x14\n" +
-	"\x05email\x18\x01 \x01(\tR\x05email\x12\x12\n" +
-	"\x04text\x18\x02 \x01(\tR\x04text\">\n" +
-	"\fSendResponse\x12\x18\n" +
+	"\x1bservis/self/messaging.proto\x12\tmessaging\"n\n" +
+	"\x10SendSlackRequest\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1f\n" +
+	"\vblocks_json\x18\x02 \x01(\tR\n" +
+	"blocksJson\x12#\n" +
+	"\rfallback_text\x18\x03 \x01(\tR\ffallbackText\"C\n" +
+	"\x11SendSlackResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error2K\n" +
-	"\tMessenger\x12>\n" +
-	"\vSendMessage\x12\x16.messaging.SendRequest\x1a\x17.messaging.SendResponseBXZVgitlab.ethz.ch/vseth/1100-fv/1116-vis/cat/sip-vis-cat-apps/2message2api/internal/pb;pbb\x06proto3"
+	"\x05error\x18\x02 \x01(\tR\x05error2Z\n" +
+	"\tMessenger\x12M\n" +
+	"\x10SendSlackMessage\x12\x1b.messaging.SendSlackRequest\x1a\x1c.messaging.SendSlackResponseBXZVgitlab.ethz.ch/vseth/1100-fv/1116-vis/cat/sip-vis-cat-apps/2message2api/internal/pb;pbb\x06proto3"
 
 var (
 	file_servis_self_messaging_proto_rawDescOnce sync.Once
@@ -153,12 +165,12 @@ func file_servis_self_messaging_proto_rawDescGZIP() []byte {
 
 var file_servis_self_messaging_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_servis_self_messaging_proto_goTypes = []any{
-	(*SendRequest)(nil),  // 0: messaging.SendRequest
-	(*SendResponse)(nil), // 1: messaging.SendResponse
+	(*SendSlackRequest)(nil),  // 0: messaging.SendSlackRequest
+	(*SendSlackResponse)(nil), // 1: messaging.SendSlackResponse
 }
 var file_servis_self_messaging_proto_depIdxs = []int32{
-	0, // 0: messaging.Messenger.SendMessage:input_type -> messaging.SendRequest
-	1, // 1: messaging.Messenger.SendMessage:output_type -> messaging.SendResponse
+	0, // 0: messaging.Messenger.SendSlackMessage:input_type -> messaging.SendSlackRequest
+	1, // 1: messaging.Messenger.SendSlackMessage:output_type -> messaging.SendSlackResponse
 	1, // [1:2] is the sub-list for method output_type
 	0, // [0:1] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name

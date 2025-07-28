@@ -5,15 +5,18 @@ package messaging;
 option go_package = "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cat/sip-vis-cat-apps/2message2api/internal/pb;pb";
 
 service Messenger {
-    rpc SendMessage (SendRequest) returns (SendResponse);
+    rpc SendSlackMessage (SendSlackRequest) returns (SendSlackResponse);
 }
 
-message SendRequest {
+message SendSlackRequest {
     string email = 1;
-    string text = 2;
+    // JSON-encoded array of slack blocks https://app.slack.com/block-kit-builder/
+    string blocks_json = 2;
+    // Fallback plain-text message
+    string fallback_text = 3;
 }
 
-message SendResponse {
+message SendSlackResponse {
     bool success = 1;
     string error = 2;
 }

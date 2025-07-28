@@ -19,14 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Messenger_SendMessage_FullMethodName = "/messaging.Messenger/SendMessage"
+	Messenger_SendSlackMessage_FullMethodName = "/messaging.Messenger/SendSlackMessage"
 )
 
 // MessengerClient is the client API for Messenger service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MessengerClient interface {
-	SendMessage(ctx context.Context, in *SendRequest, opts ...grpc.CallOption) (*SendResponse, error)
+	SendSlackMessage(ctx context.Context, in *SendSlackRequest, opts ...grpc.CallOption) (*SendSlackResponse, error)
 }
 
 type messengerClient struct {
@@ -37,10 +37,10 @@ func NewMessengerClient(cc grpc.ClientConnInterface) MessengerClient {
 	return &messengerClient{cc}
 }
 
-func (c *messengerClient) SendMessage(ctx context.Context, in *SendRequest, opts ...grpc.CallOption) (*SendResponse, error) {
+func (c *messengerClient) SendSlackMessage(ctx context.Context, in *SendSlackRequest, opts ...grpc.CallOption) (*SendSlackResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SendResponse)
-	err := c.cc.Invoke(ctx, Messenger_SendMessage_FullMethodName, in, out, cOpts...)
+	out := new(SendSlackResponse)
+	err := c.cc.Invoke(ctx, Messenger_SendSlackMessage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func (c *messengerClient) SendMessage(ctx context.Context, in *SendRequest, opts
 // All implementations must embed UnimplementedMessengerServer
 // for forward compatibility.
 type MessengerServer interface {
-	SendMessage(context.Context, *SendRequest) (*SendResponse, error)
+	SendSlackMessage(context.Context, *SendSlackRequest) (*SendSlackResponse, error)
 	mustEmbedUnimplementedMessengerServer()
 }
 
@@ -62,8 +62,8 @@ type MessengerServer interface {
 // pointer dereference when methods are called.
 type UnimplementedMessengerServer struct{}
 
-func (UnimplementedMessengerServer) SendMessage(context.Context, *SendRequest) (*SendResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SendMessage not implemented")
+func (UnimplementedMessengerServer) SendSlackMessage(context.Context, *SendSlackRequest) (*SendSlackResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendSlackMessage not implemented")
 }
 func (UnimplementedMessengerServer) mustEmbedUnimplementedMessengerServer() {}
 func (UnimplementedMessengerServer) testEmbeddedByValue()                   {}
@@ -86,20 +86,20 @@ func RegisterMessengerServer(s grpc.ServiceRegistrar, srv MessengerServer) {
 	s.RegisterService(&Messenger_ServiceDesc, srv)
 }
 
-func _Messenger_SendMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SendRequest)
+func _Messenger_SendSlackMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendSlackRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MessengerServer).SendMessage(ctx, in)
+		return srv.(MessengerServer).SendSlackMessage(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Messenger_SendMessage_FullMethodName,
+		FullMethod: Messenger_SendSlackMessage_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MessengerServer).SendMessage(ctx, req.(*SendRequest))
+		return srv.(MessengerServer).SendSlackMessage(ctx, req.(*SendSlackRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -112,8 +112,8 @@ var Messenger_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*MessengerServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "SendMessage",
-			Handler:    _Messenger_SendMessage_Handler,
+			MethodName: "SendSlackMessage",
+			Handler:    _Messenger_SendSlackMessage_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
