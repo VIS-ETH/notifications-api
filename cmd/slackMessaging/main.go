@@ -13,13 +13,16 @@ import (
 )
 
 var (
-	slackSecret = flag.String("slack-secret", os.Getenv("RUNTIME_SLACK_API_KEY"), "slack message-api key")
-	port        = flag.String("port", os.Getenv("RUNTIME_SERVIS_SELF_PORT"), "runtime grpc port")
+	slackSecret   = flag.String("slack-secret", os.Getenv("RUNTIME_SLACK_API_KEY"), "slack message-api key")
+	messageSecret = flag.String("message-api-secret", os.Getenv("RUNTIME_MESSAGE_API_KEY"), "message-api key")
+	port          = flag.String("port", os.Getenv("RUNTIME_SERVIS_SELF_PORT"), "runtime grpc port")
 )
 
 func main() {
 	flag.Parse()
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(
+		grpc.UnaryInterceptor(server.AuthInterceptor(*messageSecret)),
+	)
 	slackClient := slack.NewClient(*slackSecret)
 	pb.RegisterMessengerServer(srv, server.NewMessengerServer(slackClient))
 

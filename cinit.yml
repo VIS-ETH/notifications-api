@@ -8,4 +8,5 @@ programs:
     env:
       - RUNTIME_SERVIS_SELF_PORT:
       - RUNTIME_SLACK_API_KEY:
+      - RUNTIME_MESSAGE_API_KEY:
 
