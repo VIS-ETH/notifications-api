@@ -1,0 +1,3 @@
+servis:
+  provides:
+    - name: vseth.vis.messaging
