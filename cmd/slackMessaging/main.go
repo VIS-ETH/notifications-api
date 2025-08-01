@@ -6,7 +6,7 @@ import (
 	"net"
 	"os"
 
-	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cat/sip-vis-cat-apps/2message2api/internal/pb/servis/self"
+	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cat/sip-vis-cat-apps/2message2api/internal/pb/servis/vseth/vis/messaging"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cat/sip-vis-cat-apps/2message2api/internal/server"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cat/sip-vis-cat-apps/2message2api/internal/slack"
 	"google.golang.org/grpc"
@@ -24,7 +24,7 @@ func main() {
 		grpc.UnaryInterceptor(server.AuthInterceptor(*messageSecret)),
 	)
 	slackClient := slack.NewClient(*slackSecret)
-	pb.RegisterMessengerServer(srv, server.NewMessengerServer(slackClient))
+	pb.RegisterMessagingServer(srv, server.NewMessagingServer(slackClient))
 
 	lis, err := net.Listen("tcp", ":"+*port)
 	if err != nil {

@@ -21,7 +21,7 @@ func NewClient(slackSecret string) *Client {
 	return &Client{api: slack.New(slackSecret), backoffInitialMs: 100, backoffMaxMs: 2000}
 }
 
-func (c *Client) Send(ctx context.Context, email, blocksJson, fallbackText string) error {
+func (c *Client) Send(ctx context.Context, userEmail, slackUserID, blocksJson, fallbackText string) error {
 	// Method capable of sending slack blocks https://app.slack.com/block-kit-builder/
 
 	// Ok i do not know why this wrapper was necessary but otherwise unmarshalling would simply not work
@@ -38,12 +38,22 @@ func (c *Client) Send(ctx context.Context, email, blocksJson, fallbackText strin
 
 	// Then find user via email and deal with sending message
 	op := func() error {
-		// Looking up user id via email
-		u, err := c.api.GetUserByEmail(email)
-		if err != nil {
-			return err
+		var userId string
+		if slackUserID != "" {
+			userId = slackUserID
+		} else {
+			// Looking up user id via email
+			u, err := c.api.GetUserByEmail(userEmail)
+			if err != nil {
+				// Prevent retry if user not found
+				if err.Error() == "users_not_found" {
+					return backoff.Permanent(err)
+				}
+				return err
+			}
+			userId = u.ID
 		}
-		_, _, err = c.api.PostMessageContext(ctx, u.ID, slack.MsgOptionBlocks(blocks.BlockSet...), slack.MsgOptionText(fallbackText, false))
+		_, _, err := c.api.PostMessageContext(ctx, userId, slack.MsgOptionBlocks(blocks.BlockSet...), slack.MsgOptionText(fallbackText, false))
 		return err
 	}
 

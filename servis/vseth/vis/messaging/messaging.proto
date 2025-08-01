@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package vseth.vis.messaging;
+
+option go_package = "servis/vseth/vis/messaging";
+option java_package = "ch.vseth.vis.messaging";
+
+// An API key must be provided in an "authorization" header in GRPC metadata.
+
+service Messaging {
+  // SendMail send a message via Mail - this needs privileged access
+  rpc SendMail(MailRequest) returns (MailResponse);
+  // SendSlackMessage send a message via Slack using Slack Block system
+  rpc SendSlackMessage(SlackRequest) returns (SlackResponse);
+}
+
+message MailRequest {
+  // The name to display when sending as sys user e.g. Admin. Due to technical
+  // reasons it will always be the same sending address
+  // i.e. the sending address needs to be 'sys_staging@vis.ethz.ch' (staging) or
+  // 'sys_message_api@vis.ethz.ch' (production).
+  // If you want to set a custom sending address e.g. '<appname>@vis.ethz.ch',
+  // then you need to create a mailalias from '<appname>@vis.ethz.ch' to
+  // 'sys_staging@vis.ethz.ch' (staging) or 'sys_message_api@vis.ethz.ch' (production)
+  // respectively and set 'can_send' to true.
+  string from = 1;
+  string reply_to = 2; // What address to reply to. e.g. "LUK <luk@vis.ethz.ch>"
+  repeated string to = 3; // List of to. Format: "Admin <root@vis.ethz.ch>" - will result in error if not provided
+  repeated string cc = 4; //  List of cc. Format: "Admin <root@vis.ethz.ch>"
+  repeated string bcc = 5; // List of bcc.
+  string subject = 6; // Subject of the message - will result in error if not provided
+  string body = 7; // The content of the message - will result in error if not provided
+}
+
+message MailResponse {}
+
+//empty
+
+message SlackRequest {
+  oneof recipient {
+    // The email address used to look up the Slack user.
+    string user_email = 1;
+    // The Slack user ID (if known).
+    string slack_user_id = 4;
+  }
+  // JSON-encoded array of Slack blocks https://app.slack.com/block-kit-builder/
+  string blocks_json = 2;
+  // Fallback plain-text message
+  string fallback_text = 3;
+}
+
+message SlackResponse {}
+
+//empty
