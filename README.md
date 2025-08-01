@@ -5,6 +5,8 @@ We are waiting for the vseth message api for a better mail service.
 
 ## Local setup and testing
 
+Use `npx @bufbuild/buf generate` to (re)generate the protobuf files.
+
 Install grpcui for example via brew. Use this to test any grpc request locally. Note that you will need the slack key to actually test the system. 
 
 Add the key value pair to the request metadata: {
@@ -22,7 +24,7 @@ RUNTIME_MESSAGE_API_KEY=define-how-u-want-it-so-it-is-the-same-as-in-authorizati
 From here, run `docker compose up --build` and the following at the root of the project when docker is ready:
 
 ```
-grpcui -plaintext -proto servis/self/messaging.proto localhost:6781
+grpcui -plaintext -proto servis/vseth/vis/messaging/messaging.proto localhost:6781
 ```
 
 ## Cluster testing
@@ -30,5 +32,5 @@ grpcui -plaintext -proto servis/self/messaging.proto localhost:6781
 If testing staging or prod without port-forwarding, you need to remove the plaintext flag and use port 443 on the website. So simply only run:
 
 ```
-grpcui -proto servis/self/messaging.proto twomessagetwoapi.svis.ethz.ch:443
+grpcui -proto servis/vseth/vis/messaging/messaging.proto twomessagetwoapi.svis.ethz.ch:443
 ```
