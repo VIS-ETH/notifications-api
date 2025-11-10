@@ -12,12 +12,31 @@ import (
 	"github.com/slack-go/slack"
 )
 
+type UsernameMap struct {
+	data map[string]string
+	mu   sync.RWMutex
+}
+
+func (u *UsernameMap) Get(username string) (string, bool) {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+	id, ok := u.data[username]
+	return id, ok
+}
+
+func (u *UsernameMap) Replace(newData map[string]string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.data = newData
+}
+
 type Client struct {
-	api              *slack.Client
-	backoffInitialMs int
-	backoffMaxMs     int
+	api            *slack.Client
+	backoffInitial time.Duration
+	backoffMax     time.Duration
 	// Maps ethz usernams to slack ids
-	usernameMap sync.Map
+	usernameMap  *UsernameMap
+	updatePeriod time.Duration
 }
 
 func (c *Client) UpdateUsernameMap() {
@@ -26,25 +45,29 @@ func (c *Client) UpdateUsernameMap() {
 		panic("GetUsers failed restart the pod")
 	}
 
-	c.usernameMap.Clear()
+	newMap := make(map[string]string)
 
 	for _, user := range users {
-		c.usernameMap.Store(user.Name, user.ID)
+		newMap[user.Name] = user.ID
 	}
+
+	c.usernameMap.Replace(newMap)
+
 }
 
-func ScheduleUpdateUsernameMap(c *Client) {
+func (c *Client) ScheduleUpdateUsernameMap() {
 	go func() {
 		for {
 			c.UpdateUsernameMap()
-			time.Sleep(2 * time.Hour)
+			time.Sleep(c.updatePeriod)
 		}
 	}()
 }
 
 func NewClient(slackSecret string) *Client {
-	c := &Client{api: slack.New(slackSecret), backoffInitialMs: 100, backoffMaxMs: 2000, usernameMap: sync.Map{}}
-	ScheduleUpdateUsernameMap(c)
+	u := &UsernameMap{data: make(map[string]string)}
+	c := &Client{api: slack.New(slackSecret), backoffInitial: 100 * time.Millisecond, backoffMax: 2000 * time.Millisecond, usernameMap: u}
+	c.ScheduleUpdateUsernameMap()
 	return c
 }
 
@@ -63,21 +86,21 @@ func (c *Client) Send(ctx context.Context, username, blocksJson, fallbackText st
 		return err
 	}
 
+	userId, ok := c.usernameMap.Get(username)
+	if !ok {
+		return errors.New("user not found")
+	}
+
 	// Then find user via email and deal with sending message
 	op := func() error {
-		userId, ok := c.usernameMap.Load(username)
-		if !ok {
-			return errors.New("user not found")
-		}
-
-		_, _, err := c.api.PostMessageContext(ctx, userId.(string), slack.MsgOptionBlocks(blocks.BlockSet...), slack.MsgOptionText(fallbackText, false))
+		_, _, err := c.api.PostMessageContext(ctx, userId, slack.MsgOptionBlocks(blocks.BlockSet...), slack.MsgOptionText(fallbackText, false))
 		return err
 	}
 
 	// Done with exponential backoff
 	b := backoff.NewExponentialBackOff()
-	b.InitialInterval = time.Duration(c.backoffInitialMs) * time.Millisecond
-	b.MaxElapsedTime = time.Duration(c.backoffMaxMs) * time.Millisecond
+	b.InitialInterval = c.backoffInitial
+	b.MaxElapsedTime = c.backoffMax
 
 	if err := backoff.RetryNotify(op, b, func(err error, d time.Duration) {
 		log.Printf("retry in %s due to %v", d, err)
