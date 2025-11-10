@@ -37,6 +37,8 @@ message MailResponse {}
 //empty
 
 message SlackRequest {
+  // Username of the slack user that is recieving the message
+  // In our case this corresponds to ETHZ Kuerztel
   string recipient = 1;
   // JSON-encoded array of Slack blocks https://app.slack.com/block-kit-builder/
   string blocks_json = 2;
