@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/mail"
 	"net/smtp"
@@ -10,7 +11,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/pb/sip/notifications"
+	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -27,51 +30,7 @@ type Mail struct {
 }
 
 func (s *NotificationsServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailResponse, error) {
-	//_, err := auth.GetClaimsFromEnrichedGrpcCtx(ctx)
-	//if err != nil {
-	//	return nil, err
-	//}
-
-	sanitizedMail, err := pbMailToSanitizedMail(mailReq, *s.defaultMailSenderAddress)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "Provided message was invalid: %v", err)
-	}
-
-	client, err := getMailClient()
-	defer func() {
-		err = client.Close()
-		if err != nil {
-			err = status.Errorf(codes.Aborted, "Failed to close smtp client: %v", err)
-		}
-	}()
-
-	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to connect mail server")
-	}
-
-	if err := client.Mail(sanitizedMail.From.Address); err != nil {
-		s.mailLogger.Errorf("Failed to mail from %s: %v", mailReq.From, err)
-		return nil, status.Errorf(codes.Aborted, "could not start sending mail with from mail address %s", mailReq.From.Address)
-	}
-
-	recipients := slices.Concat(sanitizedMail.To, sanitizedMail.Cc, sanitizedMail.Bcc)
-	for i, to := range recipients {
-		if err := client.Rcpt(to.Address); err != nil {
-			s.mailLogger.Errorf("Failed to add recipient %d (%s): %v", i, to.Address, err)
-			return nil, status.Errorf(codes.Aborted, "Could not add recipient %d: %s", i, to.Address)
-		}
-	}
-
-	wc, err := client.Data()
-	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "Could not start sending data: %v", err)
-	}
-	defer func() {
-		err = wc.Close()
-		if err != nil {
-			err = status.Errorf(codes.Aborted, "Failed to close data writer: %v", err)
-		}
-	}()
+	s.mailConfig.logger.Trace("Generating UUID for message...")
 
 	messageUUID, err := uuid.NewV7()
 	if err != nil {
@@ -79,6 +38,74 @@ func (s *NotificationsServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*
 	}
 	messageID := fmt.Sprintf("%s@%s", messageUUID.String(), "mail-api-vis")
 
+	logger := s.mailConfig.logger.WithFields(logrus.Fields{
+		"message-id": messageID,
+	})
+
+	claims, err := auth.GetClaimsFromEnrichedGrpcCtx(ctx)
+	if err != nil {
+		if *s.unauthenticated {
+			logger.Debugf("Unauthenticated mode: running request with failed authorization check: %v", err)
+		} else {
+			return nil, err
+		}
+	}
+
+	logger.Trace("Transforming & sanitizing proto mail format to internal formats...")
+
+	sanitizedMail, err := pbMailToSanitizedMail(mailReq, s.mailConfig.defaultMailSenderAddress)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "Provided message was invalid: %v", err)
+	}
+
+	err = s.checkSendPermission(claims, sanitizedMail)
+	if err != nil {
+		if *s.unauthenticated {
+			logger.Debugf("Unauthenticated mode: some values are not permitted... %v", err)
+		} else {
+			return nil, status.Errorf(codes.PermissionDenied, "Cannot send mails: %v", err)
+		}
+	}
+
+	if *s.loggingOnly {
+		mailResponse := &pb.MailResponse{
+			MailId: messageID,
+		}
+		logger.Infof("Logging-only mode: requested to send mail %+v", sanitizedMail)
+		logger.Infof("Logging-only mode: return successful response to %+v", mailResponse)
+		logger.Tracef("Logging-only mode: full message content: %s", getMessageContent(sanitizedMail, messageID))
+		return mailResponse, nil
+	}
+
+	err = s.transmitMail(sanitizedMail, messageID, logger)
+
+	return &pb.MailResponse{
+		MailId: string(messageID),
+	}, err
+}
+
+func (s *NotificationsServer) checkSendPermission(claims *auth.CustomClaims, message *Mail) error {
+	var permErrors []error
+
+	if !claims.CanMail() {
+		permErrors = append(permErrors, errors.New("not allowed to send mails via Notifications API"))
+	}
+
+	// Everyone is allowed to send as the default - if allowed to send at all
+	isSenderAllowed := (message.From.Address == s.mailConfig.defaultMailSenderAddress) ||
+		claims.IsSenderAllowed(&message.From.Address)
+
+	if !isSenderAllowed {
+		permErrors = append(permErrors, fmt.Errorf("not allowed to send from address: %s", message.From.Address))
+	}
+
+	// if len(message.To) > 500 {
+
+	//}
+	return errors.Join(permErrors...)
+}
+
+func getMessageContent(sanitizedMail *Mail, messageID string) string {
 	var messageBuilder strings.Builder
 	messageBuilder.WriteString(fmt.Sprintf("Date: %s\n", time.Now().Format(time.RFC822Z)))
 	messageBuilder.WriteString(fmt.Sprintf("From: %s\n", sanitizedMail.From.String()))
@@ -116,22 +143,64 @@ func (s *NotificationsServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*
 	messageContent = strings.ReplaceAll(messageContent, "\r\n", "\n")
 	messageContent = strings.ReplaceAll(messageContent, "\n", "\r\n")
 
-	_, err = wc.Write([]byte(messageContent))
-	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "Failed to write message content: %v", err)
-	}
-
-	return &pb.MailResponse{
-		MailId: string(messageID),
-	}, err
+	return messageContent
 }
 
-func getMailClient() (*smtp.Client, error) {
-	client, err := smtp.Dial("***REMOVED***:25")
+func (s *NotificationsServer) transmitMail(sanitizedMail *Mail, messageID string, logger *logrus.Entry) error {
+	logger.Trace("Establishing SMTP connection")
+
+	client, err := smtp.Dial(s.mailConfig.smtpEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial smtp server and retrieve client: %v", err)
+		return fmt.Errorf("failed to dial smtp server and retrieve client: %v", err)
 	}
-	return client, nil
+	defer func() {
+		err = client.Close()
+		if err != nil {
+			err = status.Errorf(codes.Aborted, "Failed to close smtp client: %v", err)
+		}
+	}()
+
+	if err != nil {
+		return status.Error(codes.Internal, "failed to connect mail server")
+	}
+
+	logger.Trace("SMTP From")
+
+	if err := client.Mail(sanitizedMail.From.Address); err != nil {
+		logger.Errorf("Failed to mail from %s: %v", sanitizedMail.From.Address, err)
+		return status.Errorf(codes.Aborted, "could not start sending mail with from mail address %s", sanitizedMail.From.Address)
+	}
+
+	logger.Trace("Setting SMTP recipients")
+
+	recipients := slices.Concat(sanitizedMail.To, sanitizedMail.Cc, sanitizedMail.Bcc)
+	for i, to := range recipients {
+		if err := client.Rcpt(to.Address); err != nil {
+			logger.Errorf("Failed to add recipient %d (%s): %v", i, to.Address, err)
+			return status.Errorf(codes.Aborted, "Could not add recipient %d: %s", i, to.Address)
+		}
+	}
+
+	logger.Trace("Transmitting data...")
+
+	wc, err := client.Data()
+	if err != nil {
+		return status.Errorf(codes.Aborted, "Could not start sending data: %v", err)
+	}
+	defer func() {
+		err = wc.Close()
+		if err != nil {
+			err = status.Errorf(codes.Aborted, "Failed to close data writer: %v", err)
+		}
+	}()
+
+	_, err = wc.Write([]byte(getMessageContent(sanitizedMail, messageID)))
+	if err != nil {
+		return status.Errorf(codes.Aborted, "Failed to write message content: %v", err)
+	}
+
+	logger.Trace("Successfully written message")
+	return nil
 }
 
 func pbMailToSanitizedMail(mailReq *pb.Mail, defaultSender string) (*Mail, error) {
@@ -170,7 +239,7 @@ func pbMailToSanitizedMail(mailReq *pb.Mail, defaultSender string) (*Mail, error
 	}
 
 	if len(mailReq.ExtraHeader) > 0 {
-		return nil, fmt.Errorf("extra_header not yet supported")
+		return nil, errors.New("extra_header not yet supported")
 	}
 
 	return &Mail{

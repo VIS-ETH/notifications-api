@@ -13,18 +13,49 @@ type CustomClaims struct {
 	jwt.RegisteredClaims
 }
 
-func (c *CustomClaims) IsSenderAllowed(sender *string) bool {
+func (c *CustomClaims) getRoles() *[]string {
+	if c == nil {
+		// All grpc methods are auth aware, this is fine (trust me)
+		logrus.Warnf("No claim is configured... handling as completely unauthenticated...")
+		return nil
+	}
 	client, ok := c.ResourceAccess[*c.ClientID]
 	if !ok {
 		logrus.Warnf("No resource_access entry for client %s was found...", *c.ClientID)
-		return false
+		return nil
 	}
 
 	roles, ok := client["roles"]
 	if !ok {
 		logrus.Warnf("No roles were found in resource_access for client %s..", *c.ClientID)
+		return nil
+	}
+	return &roles
+}
+
+func (c *CustomClaims) CanMail() bool {
+	roles := c.getRoles()
+	if roles == nil {
 		return false
 	}
 
-	return slices.Contains(roles, *sender)
+	return slices.Contains(*roles, "mail")
+}
+
+func (c *CustomClaims) IsSenderAllowed(sender *string) bool {
+	roles := c.getRoles()
+	if roles == nil {
+		return false
+	}
+
+	return slices.Contains(*roles, "sender:"+*sender)
+}
+
+func (c *CustomClaims) IsHeaderAllowed(header *string) bool {
+	roles := c.getRoles()
+	if roles == nil {
+		return false
+	}
+
+	return slices.Contains(*roles, "header:"+*header)
 }

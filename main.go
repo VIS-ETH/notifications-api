@@ -5,9 +5,10 @@ import (
 	"flag"
 	"net"
 	"os"
+	"strings"
 
 	"github.com/MicahParks/keyfunc/v3"
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/pb/sip/notifications"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/server"
@@ -15,7 +16,7 @@ import (
 )
 
 func main() {
-	log.Info("Start")
+	logrus.Info("Starting Notifications API")
 
 	// SMTP Server
 	smtpEndpoint := flag.String(
@@ -27,8 +28,8 @@ func main() {
 	// Auth flags
 	oidcClientID := flag.String(
 		"oidc-client-id",
-		EnvOrDefault("SIP_AUTH_OIDC_CLIENT_ID", "cdn-backend"),
-		"Client ID used for CDN",
+		EnvOrDefault("SIP_AUTH_OIDC_CLIENT_ID", "notifications-api"),
+		"Client ID used for Notifications API",
 	)
 	oidcIssuer := flag.String(
 		"oidc-issuer",
@@ -38,38 +39,72 @@ func main() {
 	oidcJwksURL := flag.String(
 		"oidc-client-jwks-url",
 		EnvOrDefault("SIP_AUTH_OIDC_JWKS_URL", "https://keycloak-fake.vis.ethz.ch/realms/VSETH/protocol/openid-connect/certs"),
-		"Client ID used for CDN",
+		"Client ID used for Notifications API",
 	)
 
 	// gRPC server config
+	// Notifications Server configuration
+	loggingOnly := flag.Bool(
+		"grpc-logging-only",
+		// "local-testing" first mentality...
+		strings.ToLower(EnvOrDefault("NOTIFICATIONS_LOGGING_ONLY", "true")) == "true",
+		"Only log notifications, without sending",
+	)
+	unauthenticatedGrpc := flag.Bool(
+		"grpc-unauthenticated",
+		strings.ToLower(EnvOrDefault("NOTIFICATIONS_UNAUTHENTICATED", "false")) == "true",
+		"Skip authentication checks on incoming gRPC requests",
+	)
 	addrFlag := flag.String(
-		"addr",
-		EnvOrDefault("CDN_BACKEND_GRPC_PORT", ":6781"),
+		"grpc-addr",
+		EnvOrDefault("NOTIFICATIONS_BACKEND_GRPC_PORT", ":6781"),
 		"gRPC listen address",
 	)
 
+	flag.Parse()
+
+	logrus.Infof("Starting Notifications API with parameters: %+v", map[string]any{
+		"Unauthenticated gRPC": *unauthenticatedGrpc,
+		"Logging only":         *loggingOnly,
+		"gRPC server address":  *addrFlag,
+		"SMTP endpoint":        *smtpEndpoint,
+	})
+
+	logLevelEnv := EnvOrDefault("LOG_LEVEL", "info")
+	logLevel, err := logrus.ParseLevel(logLevelEnv)
+	if err != nil {
+		logrus.Fatalf("Failed to set log level: %v", err)
+	}
+	logrus.SetLevel(logLevel)
+
 	k, err := keyfunc.NewDefaultCtx(context.Background(), []string{*oidcJwksURL})
 	if err != nil {
-		log.Fatalf("Failed to create a keyfunc.Keyfunc from the server's URL. Error: %s", err)
+		logrus.Fatalf("Failed to create a keyfunc.Keyfunc from the server's URL. Error: %s", err)
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(oidcIssuer, oidcClientID, k.Keyfunc)),
+		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(oidcIssuer, oidcClientID, unauthenticatedGrpc, k.Keyfunc)),
+	)
+
+	mailConfig := server.NewMailConfiguration(
+		"serviceaccount@vis.ethz.ch",
+		*smtpEndpoint,
 	)
 
 	notificationsServer := server.NewNotificationsServer(
-		"serviceaccount@vis.ethz.ch",
-		smtpEndpoint,
+		loggingOnly,
+		unauthenticatedGrpc,
+		mailConfig,
 	)
 
 	pb.RegisterNotificationsServiceServer(grpcServer, notificationsServer)
 	l, err := net.Listen("tcp", *addrFlag)
 	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
+		logrus.Fatalf("Failed to listen: %v", err)
 	}
-	log.Printf("Serving gRPC at %s", l.Addr().String())
+	logrus.Printf("Serving gRPC at %s", l.Addr().String())
 
-	log.Fatalf("Failed to serve: %v", grpcServer.Serve(l))
+	logrus.Fatalf("Failed to serve: %v", grpcServer.Serve(l))
 }
 
 func EnvOrDefault(envVar, defaultVal string) string {

@@ -53,18 +53,26 @@ func parseIncomingToken(ctx context.Context, oidcIssuer, oidcClientID *string, k
 	return &claims, nil
 }
 
-func GetGrpcAuthInterceptor(oidcIssuer, oidcClientID *string, k jwt.Keyfunc) grpc.UnaryServerInterceptor {
+func GetGrpcAuthInterceptor(oidcIssuer, oidcClientID *string, unauthenticated *bool, k jwt.Keyfunc) grpc.UnaryServerInterceptor {
+	logger := logrus.WithFields(logrus.Fields{
+		"component": "grpc-auth-interceptor",
+	})
+
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		claims, err := parseIncomingToken(ctx, oidcIssuer, oidcClientID, k)
 		if err != nil {
-			logrus.Errorf("could not get token from context: %v", err)
-			// return nil, status.Error(codes.Unauthenticated, "Token invalid or missing")
+			if *unauthenticated {
+				logger.Debugf("Allowing missing or corrupt token as we are in unauthenticated mode...")
+			} else {
+				logger.Errorf("could not get token from context: %v", err)
+				return nil, status.Error(codes.Unauthenticated, "Token invalid or missing")
+			}
 		}
 
 		enrichedCtx := context.WithValue(ctx, authParsedTokenContextKey, claims)
 		res, err := handler(enrichedCtx, req)
 		if err != nil {
-			logrus.Warnf("request %v for %v failed: %v", req, info, err)
+			logger.Warnf("request %v for %v failed: %v", req, info, err)
 		}
 		return res, err
 	}

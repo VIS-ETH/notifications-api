@@ -1,3 +1,5 @@
 generated/
 mail-api
 notifications-api
+
+.env.local

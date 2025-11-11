@@ -6,19 +6,34 @@ import (
 )
 
 type NotificationsServer struct {
-	defaultMailSenderAddress *string
-	smtpEndpoint             *string
-	mailLogger               *logrus.Logger
+	loggingOnly     *bool
+	unauthenticated *bool
+	mailConfig      *MailConfiguration
 	pb.UnimplementedNotificationsServiceServer
 }
 
-func NewNotificationsServer(defaultMailSenderAddress string, smtpEndpoint *string) *NotificationsServer {
+type MailConfiguration struct {
+	defaultMailSenderAddress string
+	smtpEndpoint             string
+	logger                   *logrus.Logger
+}
+
+func NewNotificationsServer(loggingOnly, unauthenticated *bool, mailConfig *MailConfiguration) *NotificationsServer {
+	return &NotificationsServer{
+		loggingOnly:     loggingOnly,
+		unauthenticated: unauthenticated,
+		mailConfig:      mailConfig,
+	}
+}
+
+func NewMailConfiguration(defaultSender string, smtpEndpoint string) *MailConfiguration {
 	mailLogger := logrus.WithFields(logrus.Fields{
 		"component": "mail",
 	})
-	return &NotificationsServer{
-		defaultMailSenderAddress: &defaultMailSenderAddress,
+
+	return &MailConfiguration{
+		defaultMailSenderAddress: defaultSender,
 		smtpEndpoint:             smtpEndpoint,
-		mailLogger:               mailLogger.Logger,
+		logger:                   mailLogger.Logger,
 	}
 }
