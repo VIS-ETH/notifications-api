@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package sip.notifications;
+
+option go_package = "servis/sip/notifications";
+
+service NotificationsService {
+  rpc SendMail(Mail) returns (MailResponse);
+  rpc QueueMail(Mail) returns (QueueResponse);
+}
+
+message Mail {
+  optional MailAddress from = 1;
+  repeated MailAddress reply_to = 2;
+  repeated MailAddress to = 3;
+  repeated MailAddress cc = 4;
+  repeated MailAddress bcc = 5;
+  // Must be explicitly allowed for user
+  repeated ExtraHeader extra_header = 6;
+  string subject = 7;
+  string body = 8;
+}
+
+message ExtraHeader {
+  string key = 1;
+  string value = 2;
+}
+
+message MailAddress {
+  oneof address {
+    Address mail_address = 1;
+    // Unimplemented
+    string vseth_user_id = 2;
+  }
+
+  // Parsed version of "John Doe <john.doe@example.com>"
+  message Address {
+    string name = 1;
+    string address = 2;
+  }
+}
+
+message MailResponse {
+  string mail_id = 1;
+}
+
+message QueueResponse {}

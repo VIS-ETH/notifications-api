@@ -1,0 +1,16 @@
+version: v2
+clean: true
+
+# NOTE: The servis files are in the common parent directory to be shared with the frontend.
+# The code generation is supposed to be run in this parent directory. See Makefile
+
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.36.10
+    out: generated/pb
+    opt: paths=source_relative
+  - remote: buf.build/grpc/go:v1.5.1
+    out: generated/pb
+    opt:
+      - paths=source_relative
+inputs:
+  - directory: servis
