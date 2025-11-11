@@ -9,15 +9,15 @@ build: codegen
 ifeq ($(docker), true)
 codegen: clean
 	# Build a docker image with all dependencies generated...
-	docker build backend \
+	docker build . \
 		--target builder \
-		-t mail-api-codegen
+		-t notifications-api-codegen
 	
 	# And copy over the files from there onto our host
 	docker run \
 		--entrypoint /bin/sh \
 	  -v ./generated:/generated \
-	  mail-api-codegen \
+	  notifications-api-codegen \
 		-c 'cp -R /app/generated /'
 else
 codegen: clean generate-protos # generate-sqlc

@@ -1,0 +1,8 @@
+services:
+  notifications-api:
+    build: .
+    ports:
+      - 6781:6781
+    environment:
+      NOTIFICATIONS_UNAUTHENTICATED: true
+      LOG_LEVEL: trace

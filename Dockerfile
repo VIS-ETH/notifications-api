@@ -28,7 +28,7 @@ RUN go build .
 
 FROM gcr.io/distroless/base
 
-COPY --from=builder /app/mail-api /
+COPY --from=builder /app/notifications-api /
 #COPY sql/migrations /sql/migrations
 
-ENTRYPOINT ["/mail-api"]
+ENTRYPOINT ["/notifications-api"]
