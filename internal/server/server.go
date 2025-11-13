@@ -19,18 +19,7 @@ func NewMessagingServer(sc *slack.Client) *MessagingServer {
 }
 
 func (s *MessagingServer) SendSlackMessage(ctx context.Context, req *pb.SlackRequest) (*pb.SlackResponse, error) {
-	var userEmail, slackUserID string
-
-	switch r := req.Recipient.(type) {
-	case *pb.SlackRequest_UserEmail:
-		userEmail = r.UserEmail
-	case *pb.SlackRequest_SlackUserId:
-		slackUserID = r.SlackUserId
-	default:
-		return nil, status.Errorf(codes.InvalidArgument, "no recipient specified")
-	}
-
-	if err := s.slackClient.Send(ctx, userEmail, slackUserID, req.BlocksJson, req.FallbackText); err != nil {
+	if err := s.slackClient.Send(ctx, req.Recipient, req.BlocksJson, req.FallbackText); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to send Slack message: %v", err)
 	}
 	return nil, nil
