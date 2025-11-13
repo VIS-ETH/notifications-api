@@ -91,7 +91,6 @@ func (c *Client) Send(ctx context.Context, username, blocksJson, fallbackText st
 		return errors.New("user not found")
 	}
 
-	// Then find user via email and deal with sending message
 	op := func() error {
 		_, _, err := c.api.PostMessageContext(ctx, userId, slack.MsgOptionBlocks(blocks.BlockSet...), slack.MsgOptionText(fallbackText, false))
 		return err
