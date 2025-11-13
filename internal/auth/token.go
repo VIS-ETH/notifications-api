@@ -48,7 +48,7 @@ func (c *CustomClaims) IsSenderAllowed(sender *string) bool {
 		return false
 	}
 
-	return slices.Contains(*roles, "sender:"+*sender)
+	return slices.Contains(*roles, "mail-sender:"+*sender)
 }
 
 func (c *CustomClaims) IsHeaderAllowed(header *string) bool {
@@ -57,5 +57,5 @@ func (c *CustomClaims) IsHeaderAllowed(header *string) bool {
 		return false
 	}
 
-	return slices.Contains(*roles, "header:"+*header)
+	return slices.Contains(*roles, "mail-header:"+*header)
 }
