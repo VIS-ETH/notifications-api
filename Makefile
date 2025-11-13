@@ -3,7 +3,7 @@ all: build
 
 .PHONY: build
 build: codegen
-	go build .
+	go build cmd/notifications-api/notifications-server.go
 
 .PHONY: codegen
 ifeq ($(docker), true)
