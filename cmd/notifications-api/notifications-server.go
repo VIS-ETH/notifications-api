@@ -62,6 +62,13 @@ func main() {
 		"gRPC listen address",
 	)
 
+	// General server config
+	logLevelFlag := flag.String(
+		"log-level",
+		EnvOrDefault("LOG_LEVEL", "info"),
+		"Setting the log level",
+	)
+
 	flag.Parse()
 
 	logrus.Infof("Starting Notifications API with parameters: %+v", map[string]any{
@@ -71,8 +78,7 @@ func main() {
 		"SMTP endpoint":        *smtpEndpoint,
 	})
 
-	logLevelEnv := EnvOrDefault("LOG_LEVEL", "info")
-	logLevel, err := logrus.ParseLevel(logLevelEnv)
+	logLevel, err := logrus.ParseLevel(*logLevelFlag)
 	if err != nil {
 		logrus.Fatalf("Failed to set log level: %v", err)
 	}

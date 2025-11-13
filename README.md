@@ -21,7 +21,7 @@ go run cmd/notifications-api/notifications-server.go
 # Run server with actually sending messages, but without grpc authentication.
 # Handle any request without checks.
 # additionally, run with highest log level
-LOG_LEVEL=trace go run cmd/notifications-api/notifications-server.go -grpc-logging-only=false -grpc-unauthenticated
+go run cmd/notifications-api/notifications-server.go -grpc-logging-only=false -grpc-unauthenticated -log-level trace
 ```
 
 ## Sending mails
