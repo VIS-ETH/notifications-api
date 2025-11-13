@@ -21,14 +21,15 @@ RUN buf generate .
 COPY go.mod go.sum ./
 RUN go mod download
 
+COPY cmd cmd
+COPY pkg pkg
 COPY internal internal
-COPY main.go ./
 
-RUN go build .
+RUN go build cmd/notifications-api/notifications-server.go
 
 FROM gcr.io/distroless/base
 
-COPY --from=builder /app/notifications-api /
+COPY --from=builder /app/notifications-server /
 #COPY sql/migrations /sql/migrations
 
-ENTRYPOINT ["/notifications-api"]
+ENTRYPOINT ["/notifications-server"]

@@ -1,0 +1,101 @@
+package mailer
+
+import (
+	"errors"
+	"fmt"
+	"net/smtp"
+	"slices"
+
+	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+type MailSender struct {
+	defaultMailSenderAddress string
+	smtpEndpoint             string
+	logger                   *logrus.Entry
+}
+
+func NewMailSender(defaultSender string, smtpEndpoint string) *MailSender {
+	mailLogger := logrus.WithFields(logrus.Fields{
+		"component": "mail",
+	})
+
+	return &MailSender{
+		defaultMailSenderAddress: defaultSender,
+		smtpEndpoint:             smtpEndpoint,
+		logger:                   mailLogger,
+	}
+}
+
+func (s *MailSender) DefaultSenderAddress() string {
+	return s.defaultMailSenderAddress
+}
+
+func (s *MailSender) TransmitMail(m *Mail) error {
+	if m == nil {
+		return errors.New("tried to send empty mail")
+	}
+	if m.MessageID == "" {
+		return errors.New("tried to send mail without Message ID")
+	}
+	logger := s.logger.WithFields(logrus.Fields{
+		"message-id": m.MessageID,
+	})
+
+	logger.Trace("Establishing SMTP connection")
+
+	client, err := smtp.Dial(s.smtpEndpoint)
+	if err != nil {
+		return fmt.Errorf("failed to dial smtp server and retrieve client: %v", err)
+	}
+	defer func() {
+		err = client.Close()
+		if err != nil {
+			err = status.Errorf(codes.Aborted, "Failed to close smtp client: %v", err)
+		}
+	}()
+
+	if err != nil {
+		return status.Error(codes.Internal, "failed to connect mail server")
+	}
+
+	logger.Trace("SMTP From")
+
+	if err := client.Mail(m.From.Address); err != nil {
+		logger.Errorf("Failed to mail from %s: %v", m.From.Address, err)
+		return status.Errorf(codes.Aborted, "could not start sending mail with from mail address %s", m.From.Address)
+	}
+
+	logger.Trace("Setting SMTP recipients")
+
+	recipients := slices.Concat(m.To, m.Cc, m.Bcc)
+	for i, to := range recipients {
+		if err := client.Rcpt(to.Address); err != nil {
+			logger.Errorf("Failed to add recipient %d (%s): %v", i, to.Address, err)
+			return status.Errorf(codes.Aborted, "Could not add recipient %d: %s", i, to.Address)
+		}
+	}
+
+	logger.Trace("Transmitting data...")
+
+	wc, err := client.Data()
+	if err != nil {
+		return status.Errorf(codes.Aborted, "Could not start sending data: %v", err)
+	}
+	defer func() {
+		err = wc.Close()
+		if err != nil {
+			err = status.Errorf(codes.Aborted, "Failed to close data writer: %v", err)
+		}
+	}()
+
+	_, err = wc.Write([]byte(m.GetMessageContent()))
+	if err != nil {
+		return status.Errorf(codes.Aborted, "Failed to write message content: %v", err)
+	}
+
+	logger.Trace("Successfully written message")
+	return nil
+}

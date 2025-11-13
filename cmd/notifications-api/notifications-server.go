@@ -12,6 +12,7 @@ import (
 	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/pb/sip/notifications"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/server"
+	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
 	"google.golang.org/grpc"
 )
 
@@ -86,7 +87,7 @@ func main() {
 		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(oidcIssuer, oidcClientID, unauthenticatedGrpc, k.Keyfunc)),
 	)
 
-	mailConfig := server.NewMailConfiguration(
+	mailConfig := mailer.NewMailSender(
 		"serviceaccount@vis.ethz.ch",
 		*smtpEndpoint,
 	)
