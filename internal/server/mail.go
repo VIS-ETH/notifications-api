@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (s *NotificationsServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailResponse, error) {
+func (s *MailServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailResponse, error) {
 	s.logger.Trace("Generating UUID for message...")
 
 	messageUUID, err := uuid.NewV7()
@@ -73,7 +73,7 @@ func (s *NotificationsServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*
 	}, err
 }
 
-func (s *NotificationsServer) checkSendPermission(claims *auth.CustomClaims, message *mailer.Mail) error {
+func (s *MailServer) checkSendPermission(claims *auth.CustomClaims, message *mailer.Mail) error {
 	var permErrors []error
 
 	if !claims.CanMail() {
@@ -133,14 +133,26 @@ func pbMailToSanitizedMail(mailReq *pb.Mail, defaultSender string) (*mailer.Mail
 		return nil, errors.New("extra_header not yet supported")
 	}
 
+	var bodyContent string
+	var extraHeaders map[string][]string
+
+	switch body := mailReq.BodyOneof.(type) {
+	case *pb.Mail_PlainText:
+		bodyContent = body.PlainText
+	case *pb.Mail_MultipartBody:
+		// extraHeaders["Content-Type"] = []string{"multipart"}
+		return nil, errors.New("multipart mail not supported")
+	}
+
 	return &mailer.Mail{
-		From:    fromAddr,
-		ReplyTo: transformedReplyToAddresses,
-		To:      transformedToAddresses,
-		Cc:      transformedCcAddresses,
-		Bcc:     transformedBccAddresses,
-		Subject: mailReq.Subject,
-		Body:    mailReq.Body,
+		From:         fromAddr,
+		ReplyTo:      transformedReplyToAddresses,
+		To:           transformedToAddresses,
+		Cc:           transformedCcAddresses,
+		Bcc:          transformedBccAddresses,
+		ExtraHeaders: extraHeaders,
+		Subject:      mailReq.Subject,
+		Body:         bodyContent,
 	}, nil
 }
 

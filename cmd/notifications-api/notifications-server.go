@@ -104,7 +104,7 @@ func main() {
 		mailConfig,
 	)
 
-	pb.RegisterNotificationsServiceServer(grpcServer, notificationsServer)
+	pb.RegisterMailServiceServer(grpcServer, notificationsServer)
 	l, err := net.Listen("tcp", *addrFlag)
 	if err != nil {
 		logrus.Fatalf("Failed to listen: %v", err)

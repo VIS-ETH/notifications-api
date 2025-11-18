@@ -4,7 +4,7 @@ package sip.notifications;
 
 option go_package = "servis/sip/notifications";
 
-service NotificationsService {
+service MailService {
   rpc SendMail(Mail) returns (MailResponse);
   rpc QueueMail(Mail) returns (QueueResponse);
 }
@@ -18,7 +18,19 @@ message Mail {
   // Must be explicitly allowed for user
   repeated ExtraHeader extra_header = 6;
   string subject = 7;
-  string body = 8;
+  oneof body_oneof {
+    string plain_text = 8;
+    MimeBody multipart_body = 9;
+  }
+}
+
+message MultiPart {
+  string content_type = 1;
+  string content = 2;
+}
+
+message MimeBody {
+  repeated MultiPart parts = 1;
 }
 
 message ExtraHeader {
