@@ -87,7 +87,7 @@ func GetClaimsFromEnrichedGrpcCtx(ctx context.Context) (*CustomClaims, error) {
 	var ok bool
 	claims, ok = authClaims.(*CustomClaims)
 	if !ok {
-		return nil, status.Errorf(codes.Unauthenticated, "auth token claims of invalid type in enriched context - %+v", authClaims)
+		return nil, status.Error(codes.Unauthenticated, "auth token claims of invalid type in enriched context")
 	}
 	return claims, nil
 }
