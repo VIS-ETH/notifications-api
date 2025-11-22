@@ -3,3 +3,4 @@ generated/
 /notifications-server
 
 .env.local
+/configs/local-observability/data
