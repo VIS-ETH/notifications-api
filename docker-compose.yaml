@@ -6,3 +6,6 @@ services:
     environment:
       NOTIFICATIONS_UNAUTHENTICATED: true
       LOG_LEVEL: trace
+      SIP_AUTH_OIDC_CLIENT_ID: mail-api
+      SIP_AUTH_OIDC_ISSUER: https://keycloak-fake.vis.ethz.ch/realms/VSETH
+      SIP_AUTH_OIDC_JWKS_URL: https://keycloak-fake.vis.ethz.ch/realms/VSETH/protocol/openid-connect/certs
