@@ -3,24 +3,24 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 
 	"github.com/MicahParks/keyfunc/v3"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/pb/sip/notifications"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
+	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/observability"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/server"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
-	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 )
 
@@ -76,10 +76,19 @@ func main() {
 		EnvOrDefault("LOG_LEVEL", "info"),
 		"Setting the log level",
 	)
-	exportOtel := flag.Bool(
-		"export-otel",
-		EnvOrDefault("EXPORT_OTEL", "false") == "true",
-		"Export metrics & traces to OTEL endpoints")
+	exportOtelTraces := flag.Bool(
+		"export-otel-traces",
+		EnvOrDefault("EXPORT_OTEL_TRACES", "false") == "true",
+		"Export traces to OTEL endpoints")
+	exportOtelMetrics := flag.Bool(
+		"export-otel-metrics",
+		EnvOrDefault("EXPORT_OTEL_METRICS", "false") == "true",
+		"Export metrics to OTEL endpoints")
+	prometheusExporterAddr := flag.String(
+		"prometheus-exporter-addr",
+		EnvOrDefault("PROMETHEUS_EXPORTER_ADDR", ":9001"),
+		"address (host:port) to export prometheus metrics on",
+	)
 
 	flag.Parse()
 
@@ -101,56 +110,41 @@ func main() {
 		logrus.Fatalf("Failed to create a keyfunc.Keyfunc from the server's URL. Error: %v", err)
 	}
 
-	var serverOptions []grpc.ServerOption
+	res, err := resource.Merge(resource.Default(),
+		resource.NewWithAttributes(semconv.SchemaURL,
+			semconv.ServiceName("notifications-server"),
+		))
+	if err != nil {
+		logrus.Fatalf("Failed to create resource. Error: %v", err)
+	}
+	otelCtx := context.Background()
 
-	if *exportOtel {
-		res, err := resource.Merge(resource.Default(),
-			resource.NewWithAttributes(semconv.SchemaURL,
-				semconv.ServiceName("notifications-server"),
-			))
+	if *exportOtelTraces {
+		tracerProvider, err := observability.SetupTracer(otelCtx, res)
 		if err != nil {
-			logrus.Fatalf("Failed to create resource. Error: %v", err)
+			logrus.Fatalf("Failed to setup observability (tracer): %v", err)
 		}
-
-		otelCtx := context.Background()
-		metricsExp, err := otlpmetricgrpc.New(otelCtx)
-		if err != nil {
-			logrus.Fatalf("Failed to startup otlp metrics grpc exporter. Error: %v", err)
-		}
-		meterProvider := metric.NewMeterProvider(
-			metric.WithReader(metric.NewPeriodicReader(metricsExp)),
-			metric.WithResource(res),
-		)
-		defer func() {
-			if err := meterProvider.Shutdown(otelCtx); err != nil {
-				logrus.Fatalf("Failed to shutdown metricsprovider: %v", err)
-			}
-		}()
-
-		tracesExp, err := otlptracegrpc.New(otelCtx)
-		if err != nil {
-			logrus.Fatalf("Failed to startup otlp traces grpc exporter. Error: %v", err)
-		}
-		tracerProvider := trace.NewTracerProvider(
-			trace.WithBatcher(tracesExp),
-			trace.WithResource(res),
-		)
 		defer func() {
 			if err := tracerProvider.Shutdown(otelCtx); err != nil {
 				logrus.Fatalf("Failed to shutdown tracerprovider: %v", err)
 			}
 		}()
-
-		otel.SetMeterProvider(meterProvider)
-		otel.SetTracerProvider(tracerProvider)
-
-		serverOptions = append(serverOptions, grpc.StatsHandler(otelgrpc.NewServerHandler()))
 	}
 
-	serverOptions = append(serverOptions, grpc.UnaryInterceptor(
-		auth.GetGrpcAuthInterceptor(oidcIssuer, oidcClientID, unauthenticatedGrpc, k.Keyfunc),
-	))
-	grpcServer := grpc.NewServer(serverOptions...)
+	meterProvider, err := observability.SetupMetrics(otelCtx, *exportOtelMetrics, res)
+	if err != nil {
+		logrus.Fatalf("Failed to setup observability (tracer): %v", err)
+	}
+	defer func() {
+		if err := meterProvider.Shutdown(otelCtx); err != nil {
+			logrus.Fatalf("Failed to shutdown metricsprovider: %v", err)
+		}
+	}()
+
+	grpcServer := grpc.NewServer(
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(oidcIssuer, oidcClientID, unauthenticatedGrpc, k.Keyfunc)),
+	)
 
 	mailConfig, err := mailer.NewMailSender(
 		"serviceaccount@vis.ethz.ch",
@@ -167,13 +161,26 @@ func main() {
 	)
 
 	pb.RegisterMailServiceServer(grpcServer, notificationsServer)
-	l, err := net.Listen("tcp", *addrFlag)
-	if err != nil {
-		logrus.Fatalf("Failed to listen: %v", err)
-	}
-	logrus.Printf("Serving gRPC at %s", l.Addr().String())
 
-	logrus.Fatalf("Failed to serve: %v", grpcServer.Serve(l))
+	eg := new(errgroup.Group)
+
+	eg.Go(func() error {
+		metricsServer := http.NewServeMux()
+		metricsServer.Handle("/metrics", promhttp.Handler())
+		return fmt.Errorf("failed to serve http: %v", http.ListenAndServe(*prometheusExporterAddr, metricsServer))
+	})
+
+	eg.Go(func() error {
+		l, err := net.Listen("tcp", *addrFlag)
+		if err != nil {
+			logrus.Fatalf("Failed to listen: %v", err)
+		}
+		logrus.Printf("Serving gRPC at %s", l.Addr().String())
+
+		return fmt.Errorf("failed to serve: %v", grpcServer.Serve(l))
+	})
+
+	logrus.Fatalf("Item in error group failed: %v", eg.Wait())
 }
 
 func EnvOrDefault(envVar, defaultVal string) string {
