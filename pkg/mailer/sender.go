@@ -1,12 +1,16 @@
 package mailer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/smtp"
 	"slices"
 
 	"github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -15,18 +19,28 @@ type MailSender struct {
 	defaultMailSenderAddress string
 	smtpEndpoint             string
 	logger                   *logrus.Entry
+	mailCounter              metric.Int64Counter
 }
 
-func NewMailSender(defaultSender string, smtpEndpoint string) *MailSender {
+func NewMailSender(defaultSender string, smtpEndpoint string) (*MailSender, error) {
 	mailLogger := logrus.WithFields(logrus.Fields{
 		"component": "mail",
 	})
+	meter := otel.Meter("mailer-meter")
+	counter, err := meter.Int64Counter("mail_sender_total_mail_count",
+		metric.WithDescription("Total mails sent by mailer"),
+		metric.WithUnit("{call}"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OTEL counter: %v", err)
+	}
 
 	return &MailSender{
 		defaultMailSenderAddress: defaultSender,
 		smtpEndpoint:             smtpEndpoint,
 		logger:                   mailLogger,
-	}
+		mailCounter:              counter,
+	}, nil
 }
 
 func (s *MailSender) DefaultSenderAddress() string {
@@ -97,5 +111,9 @@ func (s *MailSender) TransmitMail(m *Mail) error {
 	}
 
 	logger.Trace("Successfully written message")
+	s.mailCounter.Add(
+		context.Background(), 1,
+		metric.WithAttributes(attribute.String("smtp_endpoint", s.smtpEndpoint)))
+
 	return nil
 }

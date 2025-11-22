@@ -1,0 +1,64 @@
+services:
+  notifications-api:
+    extends:
+      file: ../../docker-compose.yaml
+      service: notifications-api
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4317
+      EXPORT_OTEL: true
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./data/prometheus:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-remote-write-receiver"
+      - "--enable-feature=native-histograms"
+    ports:
+      - 9090:9090
+    user: ":"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./grafana:/etc/grafana/provisioning
+      - ../dashboards:/etc/grafana/dashboardFiles
+    user: ":"
+
+  alloy:
+    image: grafana/alloy:latest
+    ports:
+      - "12345:12345"
+      - "12347:12347"
+      - "4317:4317"
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy
+    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+      - "9600:9600"
+    command: -config.file=/etc/loki/local-config.yml --log.level=info
+    volumes:
+      - ./loki-local-config.yml:/etc/loki/local-config.yml
+
+  tempo:
+    image: grafana/tempo:latest
+    ports:
+      - "3200:3200"
+    command: -config.file=/etc/tempo/tempo.yml
+    volumes:
+      - ./tempo.yml:/etc/tempo/tempo.yml
+
+  pyroscope:
+    image: grafana/pyroscope:latest
+    ports:
+      - "4040:4040"

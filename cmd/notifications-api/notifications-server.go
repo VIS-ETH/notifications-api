@@ -13,6 +13,14 @@ import (
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/server"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"google.golang.org/grpc"
 )
 
@@ -68,10 +76,14 @@ func main() {
 		EnvOrDefault("LOG_LEVEL", "info"),
 		"Setting the log level",
 	)
+	exportOtel := flag.Bool(
+		"export-otel",
+		EnvOrDefault("EXPORT_OTEL", "false") == "true",
+		"Export metrics & traces to OTEL endpoints")
 
 	flag.Parse()
 
-	logrus.Infof("Starting Notifications API with parameters: %+v", map[string]any{
+	logrus.Infof("Starting Notifications API with parameters: %v", map[string]any{
 		"Unauthenticated gRPC": *unauthenticatedGrpc,
 		"Logging only":         *loggingOnly,
 		"gRPC server address":  *addrFlag,
@@ -86,17 +98,67 @@ func main() {
 
 	k, err := keyfunc.NewDefaultCtx(context.Background(), []string{*oidcJwksURL})
 	if err != nil {
-		logrus.Fatalf("Failed to create a keyfunc.Keyfunc from the server's URL. Error: %s", err)
+		logrus.Fatalf("Failed to create a keyfunc.Keyfunc from the server's URL. Error: %v", err)
 	}
 
-	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(oidcIssuer, oidcClientID, unauthenticatedGrpc, k.Keyfunc)),
-	)
+	var serverOptions []grpc.ServerOption
 
-	mailConfig := mailer.NewMailSender(
+	if *exportOtel {
+		res, err := resource.Merge(resource.Default(),
+			resource.NewWithAttributes(semconv.SchemaURL,
+				semconv.ServiceName("notifications-server"),
+			))
+		if err != nil {
+			logrus.Fatalf("Failed to create resource. Error: %v", err)
+		}
+
+		otelCtx := context.Background()
+		metricsExp, err := otlpmetricgrpc.New(otelCtx)
+		if err != nil {
+			logrus.Fatalf("Failed to startup otlp metrics grpc exporter. Error: %v", err)
+		}
+		meterProvider := metric.NewMeterProvider(
+			metric.WithReader(metric.NewPeriodicReader(metricsExp)),
+			metric.WithResource(res),
+		)
+		defer func() {
+			if err := meterProvider.Shutdown(otelCtx); err != nil {
+				logrus.Fatalf("Failed to shutdown metricsprovider: %v", err)
+			}
+		}()
+
+		tracesExp, err := otlptracegrpc.New(otelCtx)
+		if err != nil {
+			logrus.Fatalf("Failed to startup otlp traces grpc exporter. Error: %v", err)
+		}
+		tracerProvider := trace.NewTracerProvider(
+			trace.WithBatcher(tracesExp),
+			trace.WithResource(res),
+		)
+		defer func() {
+			if err := tracerProvider.Shutdown(otelCtx); err != nil {
+				logrus.Fatalf("Failed to shutdown tracerprovider: %v", err)
+			}
+		}()
+
+		otel.SetMeterProvider(meterProvider)
+		otel.SetTracerProvider(tracerProvider)
+
+		serverOptions = append(serverOptions, grpc.StatsHandler(otelgrpc.NewServerHandler()))
+	}
+
+	serverOptions = append(serverOptions, grpc.UnaryInterceptor(
+		auth.GetGrpcAuthInterceptor(oidcIssuer, oidcClientID, unauthenticatedGrpc, k.Keyfunc),
+	))
+	grpcServer := grpc.NewServer(serverOptions...)
+
+	mailConfig, err := mailer.NewMailSender(
 		"serviceaccount@vis.ethz.ch",
 		*smtpEndpoint,
 	)
+	if err != nil {
+		logrus.Fatalf("Failed to create mail sender: %v", err)
+	}
 
 	notificationsServer := server.NewNotificationsServer(
 		loggingOnly,

@@ -1,0 +1,51 @@
+otelcol.exporter.otlp "default" {
+  client {
+    endpoint = "tempo:4317"
+    tls {
+      insecure = true
+      insecure_skip_verify = true
+    }
+  }
+}
+
+otelcol.exporter.prometheus "default" {
+  forward_to = [prometheus.remote_write.default.receiver]
+}
+
+otelcol.exporter.loki "default" {
+  forward_to = [loki.write.default.receiver]
+}
+
+otelcol.receiver.otlp "default" {
+  grpc { }
+
+  output {
+    metrics = [otelcol.exporter.prometheus.default.input]
+    traces = [otelcol.exporter.otlp.default.input]
+    logs = [otelcol.exporter.loki.default.input]
+  }
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+prometheus.exporter.self "self" {
+}
+
+prometheus.scrape "self" {
+  targets = prometheus.exporter.self.self.targets
+  forward_to = [prometheus.remote_write.default.receiver]
+}
+
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}
+
+livedebugging {
+  enabled = true
+}

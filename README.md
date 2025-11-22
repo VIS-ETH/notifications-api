@@ -18,6 +18,11 @@ set -a && source .env.local && set +a
 # Run server - by default only logs incoming messages - "testing first" mentality
 go run cmd/notifications-api/notifications-server.go
 
+# Start API via docker compose
+docker compose up --build
+# Start API via docker compose with full observability stack
+docker compose -f configs/local-observability/docker-compose.observability.yaml up --build
+
 # Run server with actually sending messages, but without grpc authentication.
 # Handle any request without checks.
 # additionally, run with highest log level
@@ -41,7 +46,7 @@ Or via long request
 
 ```
 cd servis
-grpcurl -plaintext -proto sip/notifications/notifications.proto -d '{
+grpcurl -plaintext -proto sip/notifications/mail.proto -d '{
   "replyTo": [
     {
       "mailAddress": {
@@ -88,6 +93,6 @@ grpcurl -plaintext -proto sip/notifications/notifications.proto -d '{
     }
   },
   "subject": "Test Email",
-  "body": "Hey student,\n\nAbort mission and return back to studies...\n\nPlease....\n\n\n\n\nWarm regards,\nYour predecessors"
-}' localhost:6781 sip.notifications.NotificationsService/SendMail
+  "plainText": "Hey student,\n\nAbort mission and return back to studies...\n\nPlease....\n\n\n\n\nWarm regards,\nYour predecessors"
+}' localhost:6781 sip.notifications.MailService/SendMail
 ```
