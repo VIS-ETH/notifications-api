@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -162,12 +163,23 @@ func main() {
 
 	pb.RegisterMailServiceServer(grpcServer, notificationsServer)
 
-	eg := new(errgroup.Group)
+	eg, ctx := errgroup.WithContext(context.Background())
 
+	var httpServer http.Server
 	eg.Go(func() error {
 		metricsServer := http.NewServeMux()
 		metricsServer.Handle("/metrics", promhttp.Handler())
-		return fmt.Errorf("failed to serve http: %v", http.ListenAndServe(*prometheusExporterAddr, metricsServer))
+		httpServer = http.Server{
+			Addr:    *prometheusExporterAddr,
+			Handler: metricsServer,
+		}
+		return fmt.Errorf("failed to serve http: %v", httpServer.ListenAndServe())
+	})
+	eg.Go(func() error {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return httpServer.Shutdown(shutdownCtx)
 	})
 
 	eg.Go(func() error {
@@ -178,6 +190,11 @@ func main() {
 		logrus.Printf("Serving gRPC at %s", l.Addr().String())
 
 		return fmt.Errorf("failed to serve: %v", grpcServer.Serve(l))
+	})
+	eg.Go(func() error {
+		<-ctx.Done()
+		grpcServer.GracefulStop()
+		return nil
 	})
 
 	logrus.Fatalf("Item in error group failed: %v", eg.Wait())
