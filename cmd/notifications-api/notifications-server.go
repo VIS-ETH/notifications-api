@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/pb/sip/notifications"
+	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/observability"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/server"
@@ -30,24 +30,24 @@ func main() {
 	// SMTP Server
 	smtpEndpoint := flag.String(
 		"smtp-url",
-		EnvOrDefault("SMTP_MAIL_URL", "localhost:2225"),
+		internal.EnvOrDefault("SMTP_MAIL_URL", "localhost:2225"),
 		"SMTP URL for mail client",
 	)
 
 	// Auth flags
 	oidcClientID := flag.String(
 		"oidc-client-id",
-		EnvOrDefault("SIP_AUTH_OIDC_CLIENT_ID", "notifications-api"),
+		internal.EnvOrDefault("SIP_AUTH_OIDC_CLIENT_ID", "notifications-api"),
 		"Client ID used for Notifications API",
 	)
 	oidcIssuer := flag.String(
 		"oidc-issuer",
-		EnvOrDefault("SIP_AUTH_OIDC_ISSUER", "https://keycloak-fake.vis.ethz.ch/realms/VSETH"),
+		internal.EnvOrDefault("SIP_AUTH_OIDC_ISSUER", "https://keycloak-fake.vis.ethz.ch/realms/VSETH"),
 		"Issuer URL for OIDC",
 	)
 	oidcJwksURL := flag.String(
 		"oidc-client-jwks-url",
-		EnvOrDefault("SIP_AUTH_OIDC_JWKS_URL", "https://keycloak-fake.vis.ethz.ch/realms/VSETH/protocol/openid-connect/certs"),
+		internal.EnvOrDefault("SIP_AUTH_OIDC_JWKS_URL", "https://keycloak-fake.vis.ethz.ch/realms/VSETH/protocol/openid-connect/certs"),
 		"Client ID used for Notifications API",
 	)
 
@@ -56,37 +56,37 @@ func main() {
 	loggingOnly := flag.Bool(
 		"grpc-logging-only",
 		// "local-testing" first mentality...
-		strings.ToLower(EnvOrDefault("NOTIFICATIONS_LOGGING_ONLY", "true")) == "true",
+		strings.ToLower(internal.EnvOrDefault("NOTIFICATIONS_LOGGING_ONLY", "true")) == "true",
 		"Only log notifications, without sending",
 	)
 	unauthenticatedGrpc := flag.Bool(
 		"grpc-unauthenticated",
-		strings.ToLower(EnvOrDefault("NOTIFICATIONS_UNAUTHENTICATED", "false")) == "true",
+		strings.ToLower(internal.EnvOrDefault("NOTIFICATIONS_UNAUTHENTICATED", "false")) == "true",
 		"Skip authentication checks on incoming gRPC requests",
 	)
 	addrFlag := flag.String(
 		"grpc-addr",
-		EnvOrDefault("NOTIFICATIONS_BACKEND_GRPC_PORT", ":6781"),
+		internal.EnvOrDefault("NOTIFICATIONS_BACKEND_GRPC_PORT", ":6781"),
 		"gRPC listen address",
 	)
 
 	// General server config
 	logLevelFlag := flag.String(
 		"log-level",
-		EnvOrDefault("LOG_LEVEL", "info"),
+		internal.EnvOrDefault("LOG_LEVEL", "info"),
 		"Setting the log level",
 	)
 	exportOtelTraces := flag.Bool(
 		"export-otel-traces",
-		EnvOrDefault("EXPORT_OTEL_TRACES", "false") == "true",
+		internal.EnvOrDefault("EXPORT_OTEL_TRACES", "false") == "true",
 		"Export traces to OTEL endpoints")
 	exportOtelMetrics := flag.Bool(
 		"export-otel-metrics",
-		EnvOrDefault("EXPORT_OTEL_METRICS", "false") == "true",
+		internal.EnvOrDefault("EXPORT_OTEL_METRICS", "false") == "true",
 		"Export metrics to OTEL endpoints")
 	prometheusExporterAddr := flag.String(
 		"prometheus-exporter-addr",
-		EnvOrDefault("PROMETHEUS_EXPORTER_ADDR", ":9001"),
+		internal.EnvOrDefault("PROMETHEUS_EXPORTER_ADDR", ":9001"),
 		"address (host:port) to export prometheus metrics on",
 	)
 
@@ -181,12 +181,4 @@ func main() {
 	})
 
 	logrus.Fatalf("Item in error group failed: %v", eg.Wait())
-}
-
-func EnvOrDefault(envVar, defaultVal string) string {
-	envVal, exists := os.LookupEnv(envVar)
-	if exists {
-		return envVal
-	}
-	return defaultVal
 }
