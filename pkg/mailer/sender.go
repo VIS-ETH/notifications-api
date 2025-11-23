@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/smtp"
+	"net/url"
 	"slices"
 
 	"github.com/sirupsen/logrus"
@@ -12,12 +13,13 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
 type MailSender struct {
 	defaultMailSenderAddress string
-	smtpEndpoint             string
+	smtpEndpoint             url.URL
 	logger                   *logrus.Entry
 	mailCounter              metric.Int64Counter
 }
@@ -35,9 +37,14 @@ func NewMailSender(defaultSender string, smtpEndpoint string) (*MailSender, erro
 		return nil, fmt.Errorf("failed to create OTEL counter: %v", err)
 	}
 
+	smtpEndpointURL, err := url.Parse(smtpEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse SMTP endpoint as URL: %v", err)
+	}
+
 	return &MailSender{
 		defaultMailSenderAddress: defaultSender,
-		smtpEndpoint:             smtpEndpoint,
+		smtpEndpoint:             *smtpEndpointURL,
 		logger:                   mailLogger,
 		mailCounter:              counter,
 	}, nil
@@ -60,16 +67,19 @@ func (s *MailSender) TransmitMail(ctx context.Context, m *Mail) error {
 
 	tr := otel.Tracer("mailer/sender")
 	_, span := tr.Start(ctx, "smtp.SendMail",
+		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
-			attribute.String("smtp.server", s.smtpEndpoint),
 			attribute.String("smtp.from", m.From.Address),
-			attribute.Int("smt.message_size", len(m.Body)),
+			semconv.NetworkProtocolName("smtp"),
+			semconv.ServerAddress(s.smtpEndpoint.Hostname()),
+			semconv.NetworkProtocolName("smtp"),
+			attribute.Int("smtp.message_size", len(m.Body)),
 		),
 	)
 	defer span.End()
 	logger.Trace("Establishing SMTP connection")
 
-	client, err := smtp.Dial(s.smtpEndpoint)
+	client, err := smtp.Dial(s.smtpEndpoint.Host)
 	if err != nil {
 		return fmt.Errorf("failed to dial smtp server and retrieve client: %v", err)
 	}
@@ -122,7 +132,7 @@ func (s *MailSender) TransmitMail(ctx context.Context, m *Mail) error {
 	logger.Trace("Successfully written message")
 	s.mailCounter.Add(
 		context.Background(), 1,
-		metric.WithAttributes(attribute.String("smtp_endpoint", s.smtpEndpoint)))
+		metric.WithAttributes(attribute.String("smtp_endpoint", s.smtpEndpoint.Host)))
 	span.SetStatus(codes.Ok, "email sent")
 
 	return nil

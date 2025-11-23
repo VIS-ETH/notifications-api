@@ -31,7 +31,7 @@ func main() {
 	// SMTP Server
 	smtpEndpoint := flag.String(
 		"smtp-url",
-		internal.EnvOrDefault("SMTP_MAIL_URL", "localhost:2225"),
+		internal.EnvOrDefault("SMTP_MAIL_URL", "smtp://localhost:2225"),
 		"SMTP URL for mail client",
 	)
 

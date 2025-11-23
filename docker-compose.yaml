@@ -5,6 +5,8 @@ services:
       - 6781:6781
     environment:
       NOTIFICATIONS_UNAUTHENTICATED: true
+      #NOTIFICATIONS_LOGGING_ONLY: false
+      #SMTP_MAIL_URL: "smtp://xxx.xxx.xxx.xxx:2225"
       LOG_LEVEL: trace
       SIP_AUTH_OIDC_CLIENT_ID: mail-api
       SIP_AUTH_OIDC_ISSUER: https://keycloak-fake.vis.ethz.ch/realms/VSETH

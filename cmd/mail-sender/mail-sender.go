@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/mail"
@@ -50,6 +51,7 @@ func main() {
 	messageID := fmt.Sprintf("%s@%s", messageUUID.String(), "mail-cli-vis")
 
 	err = mailSender.TransmitMail(
+		context.Background(),
 		&mailer.Mail{
 			MessageID: messageID,
 			From: &mail.Address{
