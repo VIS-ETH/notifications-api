@@ -66,7 +66,7 @@ func (s *MailServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailRe
 		return mailResponse, nil
 	}
 
-	err = s.mailSender.TransmitMail(sanitizedMail)
+	err = s.mailSender.TransmitMail(ctx, sanitizedMail)
 
 	return &pb.MailResponse{
 		MailId: string(messageID),

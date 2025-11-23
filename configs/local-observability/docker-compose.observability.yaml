@@ -5,7 +5,8 @@ services:
       service: notifications-api
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4317
-      EXPORT_OTEL: true
+      EXPORT_OTEL_TRACES: true
+      EXPORT_OTEL_METRICS: true
 
   prometheus:
     image: prom/prometheus:latest

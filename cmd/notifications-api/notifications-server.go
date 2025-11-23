@@ -98,6 +98,8 @@ func main() {
 		"Logging only":         *loggingOnly,
 		"gRPC server address":  *addrFlag,
 		"SMTP endpoint":        *smtpEndpoint,
+		"Export OTEL Metrics:": *exportOtelMetrics,
+		"Export OTEL Traces:":  *exportOtelTraces,
 	})
 
 	logLevel, err := logrus.ParseLevel(*logLevelFlag)

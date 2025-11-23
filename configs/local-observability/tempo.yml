@@ -3,14 +3,14 @@ server:
   http_listen_port: 3200
   log_level: info
 
-cache:
-  background:
-    writeback_goroutines: 5
-  caches:
-    - roles:
-        - frontend-search
-      memcached:
-        addresses: dns+memcached:11211
+#cache:
+#  background:
+#    writeback_goroutines: 5
+#  caches:
+#    - roles:
+#        - frontend-search
+#      memcached:
+#        addresses: dns+memcached:11211
 
 query_frontend:
   mcp_server:
@@ -75,6 +75,7 @@ metrics_generator:
   traces_storage:
     path: /var/tempo/generator/traces
   processor:
+    service_graphs:
     local_blocks:
       filter_server_spans: false
       flush_to_storage: true
