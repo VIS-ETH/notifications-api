@@ -35,7 +35,16 @@ As part of its interfaces, the notification API exposes calls to send mails.
 
 ## Testing the API
 
-Via GUI...
+Install grpcui for example via brew. Use this to test any grpc request locally. Note that you will need the slack key to actually test the system.
+
+Add the key value pair to the request metadata:
+
+```
+{
+    name: authorization,
+    value: insert-message-key
+}
+```
 
 ```
 cd servis

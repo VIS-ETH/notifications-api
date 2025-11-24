@@ -19,9 +19,10 @@ import (
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/database"
-	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/grpcserver"
+	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/grpcservers"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/observability"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
+	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/slack"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
@@ -191,7 +192,7 @@ func main() {
 		logrus.Fatalf("Failed to create mail sender: %v", err)
 	}
 
-	mailServer := grpcserver.NewMailServer(
+	mailServer := grpcservers.NewMailServer(
 		loggingOnly,
 		unauthenticatedGrpc,
 		queries,
@@ -199,6 +200,15 @@ func main() {
 	)
 
 	pb.RegisterMailServiceServer(grpcServer, mailServer)
+
+	slackClient := slack.NewClient()
+	slackServer := grpcservers.NewSlackServer(
+		loggingOnly,
+		unauthenticatedGrpc,
+		slackClient,
+	)
+
+	pb.RegisterSlackMessagingServiceServer(grpcServer, slackServer)
 
 	eg, ctx := errgroup.WithContext(context.Background())
 

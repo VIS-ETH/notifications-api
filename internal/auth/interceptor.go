@@ -60,16 +60,14 @@ func GetGrpcAuthInterceptor(oidcIssuer, oidcClientID *string, unauthenticated *b
 
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		claims, err := parseIncomingToken(ctx, oidcIssuer, oidcClientID, k)
+
+		enrichedCtx := ctx
 		if err != nil {
-			if *unauthenticated {
-				logger.Debugf("Allowing missing or corrupt token as we are in unauthenticated mode...")
-			} else {
-				logger.Errorf("could not get token from context: %v", err)
-				return nil, status.Error(codes.Unauthenticated, "Token invalid or missing")
-			}
+			logger.Tracef("Request unauthenticated, but request might succeed without auth")
+		} else {
+			enrichedCtx = context.WithValue(ctx, authParsedTokenContextKey, claims)
 		}
 
-		enrichedCtx := context.WithValue(ctx, authParsedTokenContextKey, claims)
 		res, err := handler(enrichedCtx, req)
 		if err != nil {
 			logger.Warnf("request %v for %v failed: %v", req, info, err)
