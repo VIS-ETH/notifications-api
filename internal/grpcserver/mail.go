@@ -1,4 +1,4 @@
-package server
+package grpcserver
 
 import (
 	"context"
@@ -22,7 +22,7 @@ const (
 	RPCMethodLoggerField = "rpc-method"
 )
 
-func (s *NotificationsServer) QueueMail(ctx context.Context, mailReq *pb.Mail) (*pb.QueueResponse, error) {
+func (s *MailServer) QueueMail(ctx context.Context, mailReq *pb.Mail) (*pb.QueueResponse, error) {
 	sanitizedMail, err := s.preprocessIncomingMailRequest(ctx, mailReq)
 	if err != nil {
 		return nil, err
@@ -40,7 +40,9 @@ func (s *NotificationsServer) QueueMail(ctx context.Context, mailReq *pb.Mail) (
 		logger.Infof("Logging-only mode: requested to send mail %+v", sanitizedMail)
 		logger.Infof("Logging-only mode: return successful response to %+v", mailResponse)
 		logger.Tracef("Logging-only mode: full message content: %s", sanitizedMail.GetMessageContent())
-		return &pb.QueueResponse{}, nil
+		return &pb.QueueResponse{
+			MailId: sanitizedMail.MessageID,
+		}, nil
 	}
 
 	mailSQLEntity, err := database.MailToDBEntity(sanitizedMail)
@@ -64,10 +66,12 @@ func (s *NotificationsServer) QueueMail(ctx context.Context, mailReq *pb.Mail) (
 		logger.Errorf("Failed to insert mail into queue: %v", err)
 		return nil, status.Errorf(codes.Internal, "Cannot register mail into queue")
 	}
-	return &pb.QueueResponse{}, nil
+	return &pb.QueueResponse{
+		MailId: sanitizedMail.MessageID,
+	}, nil
 }
 
-func (s *NotificationsServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailResponse, error) {
+func (s *MailServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailResponse, error) {
 	sanitizedMail, err := s.preprocessIncomingMailRequest(ctx, mailReq)
 	if err != nil {
 		return nil, err
@@ -95,7 +99,7 @@ func (s *NotificationsServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*
 	}, err
 }
 
-func (s *NotificationsServer) preprocessIncomingMailRequest(ctx context.Context, mailReq *pb.Mail) (*mailer.Mail, error) {
+func (s *MailServer) preprocessIncomingMailRequest(ctx context.Context, mailReq *pb.Mail) (*mailer.Mail, error) {
 	s.logger.Trace("Generating UUID for message...")
 
 	messageUUID, err := uuid.NewV7()
@@ -139,7 +143,7 @@ func (s *NotificationsServer) preprocessIncomingMailRequest(ctx context.Context,
 	return sanitizedMail, nil
 }
 
-func (s *NotificationsServer) checkSendPermission(claims *auth.CustomClaims, message *mailer.Mail) error {
+func (s *MailServer) checkSendPermission(claims *auth.CustomClaims, message *mailer.Mail) error {
 	var permErrors []error
 
 	if !claims.CanMail() {

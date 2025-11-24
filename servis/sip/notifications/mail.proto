@@ -56,4 +56,6 @@ message MailResponse {
   string mail_id = 1;
 }
 
-message QueueResponse {}
+message QueueResponse {
+  string mail_id = 1;
+}

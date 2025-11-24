@@ -8,6 +8,11 @@ services:
       EXPORT_OTEL_TRACES: true
       EXPORT_OTEL_METRICS: true
 
+  postgres:
+    extends:
+      file: ../../docker-compose.yaml
+      service: postgres
+
   prometheus:
     image: prom/prometheus:latest
     volumes:

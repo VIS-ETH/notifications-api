@@ -37,3 +37,10 @@ INSERT INTO mails (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 );
+
+-- name: DeleteOldMails :exec
+DELETE FROM mails
+WHERE
+    status = 'sent'
+  AND
+    processed_at - NOW() > $1::interval;

@@ -19,8 +19,8 @@ import (
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/database"
+	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/grpcserver"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/observability"
-	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/server"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -191,14 +191,14 @@ func main() {
 		logrus.Fatalf("Failed to create mail sender: %v", err)
 	}
 
-	notificationsServer := server.NewNotificationsServer(
+	mailServer := grpcserver.NewMailServer(
 		loggingOnly,
 		unauthenticatedGrpc,
 		queries,
 		mailSender,
 	)
 
-	pb.RegisterMailServiceServer(grpcServer, notificationsServer)
+	pb.RegisterMailServiceServer(grpcServer, mailServer)
 
 	eg, ctx := errgroup.WithContext(context.Background())
 
@@ -222,6 +222,9 @@ func main() {
 	if !*loggingOnly {
 		eg.Go(func() error {
 			return internal.HandleMailQueue(ctx, mailSender, queries)
+		})
+		eg.Go(func() error {
+			return internal.DeleteOldMails(ctx, queries)
 		})
 	}
 

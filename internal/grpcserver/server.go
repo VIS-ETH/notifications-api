@@ -1,4 +1,4 @@
-package server
+package grpcserver
 
 import (
 	"github.com/sirupsen/logrus"
@@ -7,7 +7,7 @@ import (
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
 )
 
-type NotificationsServer struct {
+type MailServer struct {
 	loggingOnly     *bool
 	unauthenticated *bool
 	queries         *sql.Queries
@@ -16,11 +16,11 @@ type NotificationsServer struct {
 	pb.UnimplementedMailServiceServer
 }
 
-func NewNotificationsServer(loggingOnly, unauthenticated *bool, queries *sql.Queries, mailSender *mailer.MailSender) *NotificationsServer {
+func NewMailServer(loggingOnly, unauthenticated *bool, queries *sql.Queries, mailSender *mailer.MailSender) *MailServer {
 	serverLogger := logrus.WithFields(logrus.Fields{
 		"component": "server",
 	})
-	return &NotificationsServer{
+	return &MailServer{
 		loggingOnly:     loggingOnly,
 		unauthenticated: unauthenticated,
 		queries:         queries,

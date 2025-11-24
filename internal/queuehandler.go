@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,13 +11,21 @@ import (
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/sql"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/database"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
-	checkInterval = 1 * time.Minute
+	checkInterval  = 1 * time.Minute
+	deleteInterval = 1 * time.Hour
 )
 
-var retryFailedIntervalMicroseconds = 1 * time.Hour.Microseconds()
+var (
+	retryFailedIntervalMicroseconds = 1 * time.Hour.Microseconds()
+	keepMailsForIntervalDays        = /* 2 weeks */ 14
+)
 
 // HandleMailQueue continuously watches the database (every minute) and
 // tries to send any remaining mail (according to rate limit rules etc.)
@@ -58,17 +67,25 @@ func popAndHandleMail(ctx context.Context, logger *logrus.Entry, queries *sql.Qu
 		// nothing to do - skip and wait
 		return true, nil
 	}
-	status := sql.MailStatusFailed
 	poppedMail := poppedMails[0]
+
+	tr := otel.Tracer("notifications-api/queuehandler")
+	ctx, span := tr.Start(ctx, "notifications-api.handle-queued-mail",
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(
+			attribute.Int("mail.id", int(poppedMail.ID)),
+		),
+	)
+	defer span.End()
+	status := sql.MailStatusFailed
 
 	defer func() {
 		logger.Tracef("Setting mail status to %v", status)
-		err = queries.SetMailStatus(ctx, sql.SetMailStatusParams{
+		err = errors.Join(err, queries.SetMailStatus(ctx, sql.SetMailStatusParams{
 			ID:     poppedMail.ID,
 			Status: status,
-		})
+		}))
 		if err != nil {
-			err = fmt.Errorf("failed to set mail status: %v", err)
 			logger.Errorf("error in defer: %v", err)
 		}
 	}()
@@ -82,6 +99,27 @@ func popAndHandleMail(ctx context.Context, logger *logrus.Entry, queries *sql.Qu
 		return false, fmt.Errorf("failed to transmit mail, marking as failed: %v", err)
 	}
 	status = sql.MailStatusSent
+	span.SetStatus(codes.Ok, "queued mail handled")
 
 	return false, err
+}
+
+func DeleteOldMails(ctx context.Context, queries *sql.Queries) error {
+	logger := logrus.WithFields(logrus.Fields{
+		"component": "db-delete-mail-handler",
+	})
+	for {
+		err := queries.DeleteOldMails(ctx, pgtype.Interval{
+			Days: int32(keepMailsForIntervalDays),
+		})
+		if err != nil {
+			logger.Errorf("failed to delete mails: %v", err)
+		}
+
+		select {
+		case <-time.Tick(deleteInterval):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
