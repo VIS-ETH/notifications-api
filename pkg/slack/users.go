@@ -29,7 +29,7 @@ func (u *UsernameMap) Replace(newData map[string]string, expiresAt time.Time) {
 	u.data = newData
 }
 
-func (c *Client) UpdateUsernameMap(ctx context.Context, api *slack.Client, workspaceURL string) error {
+func (c *Client) UpdateUsernameMap(ctx context.Context, api *slack.Client, workspaceURL string) (*UsernameMap, error) {
 	var users []slack.User
 	var err error
 	for {
@@ -39,7 +39,7 @@ func (c *Client) UpdateUsernameMap(ctx context.Context, api *slack.Client, works
 		}
 		err, ok := err.(*slack.RateLimitedError)
 		if !ok {
-			return fmt.Errorf("failed to get users: %v", err)
+			return nil, fmt.Errorf("failed to get users: %v", err)
 		}
 		c.logger.Infof("rate limited while getting users: %v", err)
 		<-time.Tick(err.RetryAfter)
@@ -51,6 +51,12 @@ func (c *Client) UpdateUsernameMap(ctx context.Context, api *slack.Client, works
 		newMap[user.Name] = user.ID
 	}
 
-	c.workspaceUsers[workspaceURL].Replace(newMap, time.Now().Add(c.updatePeriod))
-	return nil
+	existingMap, ok := c.workspaceUsers[workspaceURL]
+	if !ok || existingMap == nil {
+		existingMap = &UsernameMap{data: make(map[string]string)}
+		c.workspaceUsers[workspaceURL] = existingMap
+	}
+
+	existingMap.Replace(newMap, time.Now().Add(c.updatePeriod))
+	return existingMap, nil
 }

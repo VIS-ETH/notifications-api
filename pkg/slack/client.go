@@ -51,8 +51,8 @@ func (c *Client) Send(ctx context.Context, token, username, blocksJSON, fallback
 	}
 
 	usernameMap, ok := c.workspaceUsers[*workspaceURL]
-	if !ok || time.Now().After(usernameMap.expiresAt) {
-		err = c.UpdateUsernameMap(ctx, api, *workspaceURL)
+	if !ok || usernameMap == nil || time.Now().After(usernameMap.expiresAt) {
+		usernameMap, err = c.UpdateUsernameMap(ctx, api, *workspaceURL)
 		if err != nil {
 			return fmt.Errorf("failed to fetch list of users: %v", err)
 		}
