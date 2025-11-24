@@ -3,6 +3,11 @@ services:
     build: .
     ports:
       - 6781:6781
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env.local
     environment:
       NOTIFICATIONS_UNAUTHENTICATED: true
       #NOTIFICATIONS_LOGGING_ONLY: false
@@ -11,3 +16,19 @@ services:
       SIP_AUTH_OIDC_CLIENT_ID: mail-api
       SIP_AUTH_OIDC_ISSUER: https://keycloak-fake.vis.ethz.ch/realms/VSETH
       SIP_AUTH_OIDC_JWKS_URL: https://keycloak-fake.vis.ethz.ch/realms/VSETH/protocol/openid-connect/certs
+      POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable
+
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d postgres -U postgres"]
+      interval: 1s
+      timeout: 1s
+      retries: 50
+    volumes:
+      - ./data/sql:/var/lib/postgresql
+    ports:
+      - 5432:5432

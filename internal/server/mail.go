@@ -9,13 +9,93 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/pb/sip/notifications"
+	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/sql"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
+	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/database"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-func (s *MailServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailResponse, error) {
+const (
+	MessageIDLoggerField = "message-id"
+	RPCMethodLoggerField = "rpc-method"
+)
+
+func (s *NotificationsServer) QueueMail(ctx context.Context, mailReq *pb.Mail) (*pb.QueueResponse, error) {
+	sanitizedMail, err := s.preprocessIncomingMailRequest(ctx, mailReq)
+	if err != nil {
+		return nil, err
+	}
+
+	logger := s.logger.WithFields(logrus.Fields{
+		MessageIDLoggerField: sanitizedMail.MessageID,
+		RPCMethodLoggerField: "queue-mail",
+	})
+
+	if *s.loggingOnly {
+		mailResponse := &pb.MailResponse{
+			MailId: sanitizedMail.MessageID,
+		}
+		logger.Infof("Logging-only mode: requested to send mail %+v", sanitizedMail)
+		logger.Infof("Logging-only mode: return successful response to %+v", mailResponse)
+		logger.Tracef("Logging-only mode: full message content: %s", sanitizedMail.GetMessageContent())
+		return &pb.QueueResponse{}, nil
+	}
+
+	mailSQLEntity, err := database.MailToDBEntity(sanitizedMail)
+	if err != nil {
+		logger.Errorf("Failing to insert mail into DB (conversion): %v", err)
+		return nil, status.Errorf(codes.Internal, "Failed to convert mail to DB format!")
+	}
+
+	err = s.queries.CreateMail(ctx, sql.CreateMailParams{
+		FromAddress:  mailSQLEntity.FromAddress,
+		ReplyTo:      mailSQLEntity.ReplyTo,
+		ToAddresses:  mailSQLEntity.ToAddresses,
+		CcAddresses:  mailSQLEntity.CcAddresses,
+		BccAddresses: mailSQLEntity.BccAddresses,
+		ExtraHeaders: mailSQLEntity.ExtraHeaders,
+		Subject:      mailSQLEntity.Subject,
+		Body:         mailSQLEntity.Body,
+		MessageID:    mailSQLEntity.MessageID,
+	})
+	if err != nil {
+		logger.Errorf("Failed to insert mail into queue: %v", err)
+		return nil, status.Errorf(codes.Internal, "Cannot register mail into queue")
+	}
+	return &pb.QueueResponse{}, nil
+}
+
+func (s *NotificationsServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailResponse, error) {
+	sanitizedMail, err := s.preprocessIncomingMailRequest(ctx, mailReq)
+	if err != nil {
+		return nil, err
+	}
+
+	logger := s.logger.WithFields(logrus.Fields{
+		MessageIDLoggerField: sanitizedMail.MessageID,
+		RPCMethodLoggerField: "send-mail",
+	})
+
+	if *s.loggingOnly {
+		mailResponse := &pb.MailResponse{
+			MailId: sanitizedMail.MessageID,
+		}
+		logger.Infof("Logging-only mode: requested to send mail %+v", sanitizedMail)
+		logger.Infof("Logging-only mode: return successful response to %+v", mailResponse)
+		logger.Tracef("Logging-only mode: full message content: %s", sanitizedMail.GetMessageContent())
+		return mailResponse, nil
+	}
+
+	err = s.mailSender.TransmitMail(ctx, sanitizedMail)
+
+	return &pb.MailResponse{
+		MailId: string(sanitizedMail.MessageID),
+	}, err
+}
+
+func (s *NotificationsServer) preprocessIncomingMailRequest(ctx context.Context, mailReq *pb.Mail) (*mailer.Mail, error) {
 	s.logger.Trace("Generating UUID for message...")
 
 	messageUUID, err := uuid.NewV7()
@@ -56,24 +136,10 @@ func (s *MailServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailRe
 		}
 	}
 
-	if *s.loggingOnly {
-		mailResponse := &pb.MailResponse{
-			MailId: messageID,
-		}
-		logger.Infof("Logging-only mode: requested to send mail %+v", sanitizedMail)
-		logger.Infof("Logging-only mode: return successful response to %+v", mailResponse)
-		logger.Tracef("Logging-only mode: full message content: %s", sanitizedMail.GetMessageContent())
-		return mailResponse, nil
-	}
-
-	err = s.mailSender.TransmitMail(ctx, sanitizedMail)
-
-	return &pb.MailResponse{
-		MailId: string(messageID),
-	}, err
+	return sanitizedMail, nil
 }
 
-func (s *MailServer) checkSendPermission(claims *auth.CustomClaims, message *mailer.Mail) error {
+func (s *NotificationsServer) checkSendPermission(claims *auth.CustomClaims, message *mailer.Mail) error {
 	var permErrors []error
 
 	if !claims.CanMail() {

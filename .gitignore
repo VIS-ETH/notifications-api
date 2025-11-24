@@ -4,3 +4,4 @@ generated/
 
 .env.local
 /configs/local-observability/data
+/data

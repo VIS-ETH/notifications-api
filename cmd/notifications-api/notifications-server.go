@@ -4,17 +4,21 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/MicahParks/keyfunc/v3"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/pb/sip/notifications"
+	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/sql"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
+	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/database"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/observability"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/server"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
@@ -91,13 +95,43 @@ func main() {
 		"address (host:port) to export prometheus metrics on",
 	)
 
+	// DB flags
+	dsnFlag := flag.String(
+		"database-url",
+		internal.EnvOrDefault("POSTGRES_DSN", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"),
+		"PostgreSQL DSN",
+	)
+	migrationsDir := flag.String(
+		"migrations-dir",
+		internal.EnvOrDefault("MIGRATIONS_DIR", "sql/migrations"),
+		"Directory containing SQL migrations (sql-migrate)",
+	)
+
 	flag.Parse()
+
+	var queries *sql.Queries
+	if !*loggingOnly {
+		err := database.MigrateDB(dsnFlag, migrationsDir)
+		if err != nil {
+			log.Fatalf("Failed to perform migrations... Is your database functional? %+v", err)
+		}
+
+		pool, err := pgxpool.New(context.Background(), *dsnFlag)
+		if err != nil {
+			logrus.Fatalf("failed to create db pool: %v", err)
+		}
+		defer pool.Close()
+
+		queries = sql.New(pool)
+	}
 
 	logrus.Infof("Starting Notifications API with parameters: %v", map[string]any{
 		"Unauthenticated gRPC": *unauthenticatedGrpc,
 		"Logging only":         *loggingOnly,
 		"gRPC server address":  *addrFlag,
 		"SMTP endpoint":        *smtpEndpoint,
+		"Database URL":         *dsnFlag,
+		"Migrations dir":       *migrationsDir,
 		"Export OTEL Metrics:": *exportOtelMetrics,
 		"Export OTEL Traces:":  *exportOtelTraces,
 	})
@@ -149,7 +183,7 @@ func main() {
 		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(oidcIssuer, oidcClientID, unauthenticatedGrpc, k.Keyfunc)),
 	)
 
-	mailConfig, err := mailer.NewMailSender(
+	mailSender, err := mailer.NewMailSender(
 		"serviceaccount@vis.ethz.ch",
 		*smtpEndpoint,
 	)
@@ -160,7 +194,8 @@ func main() {
 	notificationsServer := server.NewNotificationsServer(
 		loggingOnly,
 		unauthenticatedGrpc,
-		mailConfig,
+		queries,
+		mailSender,
 	)
 
 	pb.RegisterMailServiceServer(grpcServer, notificationsServer)
@@ -183,6 +218,12 @@ func main() {
 		defer cancel()
 		return httpServer.Shutdown(shutdownCtx)
 	})
+
+	if !*loggingOnly {
+		eg.Go(func() error {
+			return internal.HandleMailQueue(ctx, mailSender, queries)
+		})
+	}
 
 	eg.Go(func() error {
 		l, err := net.Listen("tcp", *addrFlag)
