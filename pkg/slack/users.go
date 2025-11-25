@@ -7,6 +7,10 @@ import (
 	"time"
 
 	"github.com/slack-go/slack"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type UsernameMap struct {
@@ -30,10 +34,19 @@ func (u *UsernameMap) Replace(newData map[string]string, expiresAt time.Time) {
 }
 
 func (c *Client) UpdateUsernameMap(ctx context.Context, api *slack.Client, workspaceURL string) (*UsernameMap, error) {
+	tr := otel.Tracer("slack/sender")
+	ctx, span := tr.Start(ctx, "slack.getusers",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("slack.workspace-url", workspaceURL),
+		),
+	)
+	defer span.End()
+
 	var users []slack.User
 	var err error
 	for {
-		users, err = api.GetUsers()
+		users, err = api.GetUsersContext(ctx)
 		if err == nil {
 			break
 		}
@@ -41,6 +54,9 @@ func (c *Client) UpdateUsernameMap(ctx context.Context, api *slack.Client, works
 		if !ok {
 			return nil, fmt.Errorf("failed to get users: %v", err)
 		}
+		span.AddEvent("rate-limit", trace.WithAttributes(
+			attribute.Int("retry-after-seconds", int(err.RetryAfter.Seconds())),
+		))
 		c.logger.Infof("rate limited while getting users: %v", err)
 		<-time.Tick(err.RetryAfter)
 	}
@@ -58,5 +74,6 @@ func (c *Client) UpdateUsernameMap(ctx context.Context, api *slack.Client, works
 	}
 
 	existingMap.Replace(newMap, time.Now().Add(c.updatePeriod))
+	span.SetStatus(codes.Ok, "updated users")
 	return existingMap, nil
 }

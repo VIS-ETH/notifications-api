@@ -9,7 +9,13 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/slack-go/slack"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
+
+const updatePeriod = 12 * time.Hour
 
 type Client struct {
 	// Each workspace (VIS, VSETH, VMP, ...) has their own mapping of username to user
@@ -25,6 +31,7 @@ func NewClient() *Client {
 	})
 	return &Client{
 		workspaceUsers: make(map[string]*UsernameMap),
+		updatePeriod:   updatePeriod,
 		logger:         logger,
 	}
 }
@@ -33,7 +40,13 @@ func NewClient() *Client {
 func (c *Client) Send(ctx context.Context, token, username, blocksJSON, fallbackText string) error {
 	api := slack.New(token)
 
-	workspaceURL, err := c.getWorkspaceURL(api)
+	tr := otel.Tracer("slack/sender")
+	ctx, span := tr.Start(ctx, "slack.send",
+		trace.WithSpanKind(trace.SpanKindClient),
+	)
+	defer span.End()
+
+	workspaceURL, err := c.getWorkspaceURL(ctx, api)
 	if err != nil {
 		return fmt.Errorf("failed to get workspace url: %v", err)
 	}
@@ -52,6 +65,7 @@ func (c *Client) Send(ctx context.Context, token, username, blocksJSON, fallback
 
 	usernameMap, ok := c.workspaceUsers[*workspaceURL]
 	if !ok || usernameMap == nil || time.Now().After(usernameMap.expiresAt) {
+		logrus.Errorf("ok: %t, ussernamemap: %p, expiresAt: %t", ok, usernameMap, usernameMap == nil || time.Now().After(usernameMap.expiresAt))
 		usernameMap, err = c.UpdateUsernameMap(ctx, api, *workspaceURL)
 		if err != nil {
 			return fmt.Errorf("failed to fetch list of users: %v", err)
@@ -70,15 +84,25 @@ func (c *Client) Send(ctx context.Context, token, username, blocksJSON, fallback
 			if !ok {
 				return fmt.Errorf("failed to post message: %v", err)
 			}
+			span.AddEvent("rate-limit", trace.WithAttributes(
+				attribute.Int("retry-after-seconds", int(err.RetryAfter.Seconds())),
+			))
 			<-time.Tick(err.RetryAfter)
 		} else {
 			break
 		}
 	}
+	span.SetStatus(codes.Ok, "sent slack message")
 	return nil
 }
 
-func (c *Client) getWorkspaceURL(api *slack.Client) (*string, error) {
+func (c *Client) getWorkspaceURL(ctx context.Context, api *slack.Client) (*string, error) {
+	tr := otel.Tracer("slack/sender")
+	_, span := tr.Start(ctx, "slack.authtest",
+		trace.WithSpanKind(trace.SpanKindClient),
+	)
+	defer span.End()
+
 	var authTestResponse *slack.AuthTestResponse
 	var err error
 	for {
@@ -90,9 +114,14 @@ func (c *Client) getWorkspaceURL(api *slack.Client) (*string, error) {
 		if !ok {
 			return nil, fmt.Errorf("error while testing authentication: %v", err)
 		}
+		span.AddEvent("rate-limit", trace.WithAttributes(
+			attribute.Int("retry-after-seconds", int(err.RetryAfter.Seconds())),
+		))
 		c.logger.Infof("Got rate limited while getting workspace url: %v", err)
 		<-time.Tick(err.RetryAfter)
 	}
+
+	span.SetStatus(codes.Ok, "test successful")
 
 	return &authTestResponse.URL, nil
 }
