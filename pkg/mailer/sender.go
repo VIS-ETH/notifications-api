@@ -63,6 +63,7 @@ func (s *MailSender) TransmitMail(ctx context.Context, m *Mail) error {
 	}
 	logger := s.logger.WithFields(logrus.Fields{
 		"message-id": m.MessageID,
+		"smtp-from":  m.From.String(),
 	})
 
 	tr := otel.Tracer("mailer/sender")
@@ -134,6 +135,8 @@ func (s *MailSender) TransmitMail(ctx context.Context, m *Mail) error {
 		context.Background(), 1,
 		metric.WithAttributes(attribute.String("smtp_endpoint", s.smtpEndpoint.Host)))
 	span.SetStatus(codes.Ok, "email sent")
+
+	logger.Info("Sent mail successfully")
 
 	return nil
 }

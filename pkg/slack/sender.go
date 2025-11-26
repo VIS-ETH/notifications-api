@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/slack-go/slack"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
@@ -31,6 +32,10 @@ func (c *Client) SendToUsername(ctx context.Context, token, username, blocksJSON
 	}
 	workspaceURL := (*authTestRes).URL
 	ctx = withWorkspaceURL(ctx, workspaceURL)
+	logger := c.logger.WithFields(logrus.Fields{
+		"receiver-username": username,
+		"workspace":         workspaceURL,
+	})
 
 	// Ok i do not know why this wrapper was necessary but otherwise unmarshalling would simply not work
 	var wrapper struct {
@@ -46,7 +51,6 @@ func (c *Client) SendToUsername(ctx context.Context, token, username, blocksJSON
 
 	usernameMap, ok := c.workspaceUsers[workspaceURL]
 	if !ok || usernameMap == nil || time.Now().After(usernameMap.expiresAt) {
-		c.logger.Errorf("ok: %t, ussernamemap: %p, expiresAt: %t", ok, usernameMap, usernameMap == nil || time.Now().After(usernameMap.expiresAt))
 		usernameMap, err = c.UpdateUsernameMap(ctx, api, workspaceURL)
 		if err != nil {
 			return fmt.Errorf("failed to fetch list of users: %v", err)
@@ -69,5 +73,7 @@ func (c *Client) SendToUsername(ctx context.Context, token, username, blocksJSON
 	if err != nil {
 		return fmt.Errorf("failed to post slack message: %v", err)
 	}
+
+	logger.Infof("Slack Message sent successfully")
 	return nil
 }
