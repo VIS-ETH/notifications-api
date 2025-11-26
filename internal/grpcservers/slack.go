@@ -28,7 +28,7 @@ func (s *SlackServer) SendSlackMessage(ctx context.Context, req *pb.SlackRequest
 	}
 	token := headers[0]
 
-	if err := s.slackClient.Send(ctx, token, req.Recipient, req.BlocksJson, req.FallbackText); err != nil {
+	if err := s.slackClient.SendToUsername(ctx, token, req.Recipient, req.BlocksJson, req.FallbackText); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to send Slack message: %v", err)
 	}
 	return &pb.SlackResponse{}, nil
