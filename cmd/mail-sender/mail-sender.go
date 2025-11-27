@@ -39,7 +39,7 @@ func main() {
 		logrus.Fatalf("Body should not be empty")
 	}
 
-	mailSender, err := mailer.NewMailSender(*from, *smtpEndpoint)
+	mailSender, err := mailer.NewMailSender(*from, *smtpEndpoint, nil)
 	if err != nil {
 		logrus.Fatalf("Failed to setup mailsender: %v", err)
 	}

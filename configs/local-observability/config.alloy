@@ -32,6 +32,13 @@ loki.write "default" {
   }
 }
 
+prometheus.scrape "tempo" {
+  targets = [
+    {"__address__" = "tempo:3200"},
+  ]
+  forward_to = [prometheus.remote_write.default.receiver]
+}
+
 prometheus.exporter.self "self" {
 }
 

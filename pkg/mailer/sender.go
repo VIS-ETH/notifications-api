@@ -22,9 +22,10 @@ type MailSender struct {
 	smtpEndpoint             url.URL
 	logger                   *logrus.Entry
 	mailCounter              metric.Int64Counter
+	auth                     *SMTPAuth
 }
 
-func NewMailSender(defaultSender string, smtpEndpoint string) (*MailSender, error) {
+func NewMailSender(defaultSender string, smtpEndpoint string, smtpAuth *SMTPAuth) (*MailSender, error) {
 	mailLogger := logrus.WithFields(logrus.Fields{
 		"component": "mail",
 	})
@@ -47,6 +48,7 @@ func NewMailSender(defaultSender string, smtpEndpoint string) (*MailSender, erro
 		smtpEndpoint:             *smtpEndpointURL,
 		logger:                   mailLogger,
 		mailCounter:              counter,
+		auth:                     smtpAuth,
 	}, nil
 }
 
@@ -78,56 +80,27 @@ func (s *MailSender) TransmitMail(ctx context.Context, m *Mail) error {
 		),
 	)
 	defer span.End()
-	logger.Trace("Establishing SMTP connection")
-
-	client, err := smtp.Dial(s.smtpEndpoint.Host)
-	if err != nil {
-		return fmt.Errorf("failed to dial smtp server and retrieve client: %v", err)
-	}
-	defer func() {
-		err = client.Close()
-		if err != nil {
-			err = fmt.Errorf("failed to close smtp client: %v", err)
-		}
-	}()
-
-	if err != nil {
-		return errors.New("failed to connect mail server")
-	}
-
-	logger.Trace("SMTP From")
-
-	if err := client.Mail(m.From.Address); err != nil {
-		logger.Errorf("Failed to mail from %s: %v", m.From.Address, err)
-		return fmt.Errorf("could not start sending mail with from mail address %s", m.From.Address)
-	}
-
-	logger.Trace("Setting SMTP recipients")
 
 	recipients := slices.Concat(m.To, m.Cc, m.Bcc)
-	for i, to := range recipients {
-		if err := client.Rcpt(to.Address); err != nil {
-			logger.Errorf("Failed to add recipient %d (%s): %v", i, to.Address, err)
-			return fmt.Errorf("could not add recipient %d: %s", i, to.Address)
-		}
+	var recipientsAddresses []string
+	for _, to := range recipients {
+		recipientsAddresses = append(recipientsAddresses, to.Address)
 	}
 
-	logger.Trace("Transmitting data...")
-
-	wc, err := client.Data()
-	if err != nil {
-		return fmt.Errorf("could not start sending data: %v", err)
+	// avoid typing nil to interface:)
+	var smtpAuth smtp.Auth = nil
+	if s.auth != nil {
+		smtpAuth = s.auth
 	}
-	defer func() {
-		err = wc.Close()
-		if err != nil {
-			err = fmt.Errorf("failed to close data writer: %v", err)
-		}
-	}()
-
-	_, err = wc.Write([]byte(m.GetMessageContent()))
+	err := smtp.SendMail(
+		s.smtpEndpoint.Host,
+		smtpAuth,
+		m.From.Address,
+		recipientsAddresses,
+		[]byte(m.GetMessageContent()),
+	)
 	if err != nil {
-		return fmt.Errorf("failed to write message content: %v", err)
+		return fmt.Errorf("failed to send mail: %v", err)
 	}
 
 	logger.Trace("Successfully written message")

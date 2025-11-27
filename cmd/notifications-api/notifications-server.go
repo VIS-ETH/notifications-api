@@ -39,6 +39,16 @@ func main() {
 		internal.EnvOrDefault("SMTP_MAIL_URL", "smtp://localhost:2225"),
 		"SMTP URL for mail client",
 	)
+	smtpPlainAuthUsername := flag.String(
+		"smtp-plain-auth-username",
+		internal.EnvOrDefault("SMTP_PLAIN_AUTH_USERNAME", ""),
+		"SMTP plain auth username",
+	)
+	smtpPlainAuthPassword := flag.String(
+		"smtp-plain-auth-password",
+		internal.EnvOrDefault("SMTP_PLAIN_AUTH_PASSWORD", ""),
+		"SMTP plain auth password",
+	)
 
 	// Auth flags
 	oidcClientID := flag.String(
@@ -184,9 +194,21 @@ func main() {
 		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(oidcIssuer, oidcClientID, unauthenticatedGrpc, k.Keyfunc)),
 	)
 
+	var auth *mailer.SMTPAuth
+	if (*smtpPlainAuthUsername == "") != (*smtpPlainAuthPassword == "") {
+		logrus.Fatalf("One of plain auth username or password was set, but not both...")
+	}
+	if *smtpPlainAuthPassword != "" {
+		auth = &mailer.SMTPAuth{
+			Username: *smtpPlainAuthUsername,
+			Password: *smtpPlainAuthPassword,
+		}
+	}
+
 	mailSender, err := mailer.NewMailSender(
 		"serviceaccount@vis.ethz.ch",
 		*smtpEndpoint,
+		auth,
 	)
 	if err != nil {
 		logrus.Fatalf("Failed to create mail sender: %v", err)
