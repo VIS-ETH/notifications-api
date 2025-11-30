@@ -8,13 +8,15 @@ import (
 type SMTPAuth struct {
 	Username string
 	Password string
+
+	smtp.Auth
 }
 
-func (a *SMTPAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+func (a SMTPAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
 	return "LOGIN", []byte{}, nil
 }
 
-func (a *SMTPAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+func (a SMTPAuth) Next(fromServer []byte, more bool) ([]byte, error) {
 	if more {
 		switch string(fromServer) {
 		case "Username:":

@@ -19,13 +19,15 @@ import (
 
 type MailSender struct {
 	defaultMailSenderAddress string
+	defaultMailSenderName    string
 	smtpEndpoint             url.URL
 	logger                   *logrus.Entry
 	mailCounter              metric.Int64Counter
+	messageIDSuffix          string
 	auth                     *SMTPAuth
 }
 
-func NewMailSender(defaultSender string, smtpEndpoint string, smtpAuth *SMTPAuth) (*MailSender, error) {
+func NewMailSender(defaultSenderAddress, defaultSenderName, smtpEndpoint string, smtpAuth *SMTPAuth, messageIDSuffix string) (*MailSender, error) {
 	mailLogger := logrus.WithFields(logrus.Fields{
 		"component": "mail",
 	})
@@ -44,16 +46,26 @@ func NewMailSender(defaultSender string, smtpEndpoint string, smtpAuth *SMTPAuth
 	}
 
 	return &MailSender{
-		defaultMailSenderAddress: defaultSender,
+		defaultMailSenderAddress: defaultSenderAddress,
+		defaultMailSenderName:    defaultSenderName,
 		smtpEndpoint:             *smtpEndpointURL,
 		logger:                   mailLogger,
 		mailCounter:              counter,
 		auth:                     smtpAuth,
+		messageIDSuffix:          messageIDSuffix,
 	}, nil
 }
 
 func (s *MailSender) DefaultSenderAddress() string {
 	return s.defaultMailSenderAddress
+}
+
+func (s *MailSender) DefaultSenderName() string {
+	return s.defaultMailSenderName
+}
+
+func (s *MailSender) MessageIDSuffix() string {
+	return s.messageIDSuffix
 }
 
 func (s *MailSender) TransmitMail(ctx context.Context, m *Mail) error {

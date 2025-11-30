@@ -26,6 +26,11 @@ func main() {
 		internal.EnvOrDefault("MAIL_FROM", "anonymous@local"),
 		"From address of mail",
 	)
+	fromName := flag.String(
+		"from-name",
+		internal.EnvOrDefault("MAIL_FROM_NAME", "Anonymous"),
+		"From sender name of mail",
+	)
 
 	body := flag.String(
 		"body",
@@ -39,7 +44,13 @@ func main() {
 		logrus.Fatalf("Body should not be empty")
 	}
 
-	mailSender, err := mailer.NewMailSender(*from, *smtpEndpoint, nil)
+	mailSender, err := mailer.NewMailSender(
+		*from,
+		*fromName,
+		*smtpEndpoint,
+		nil,
+		"mail-cli-vis",
+	)
 	if err != nil {
 		logrus.Fatalf("Failed to setup mailsender: %v", err)
 	}

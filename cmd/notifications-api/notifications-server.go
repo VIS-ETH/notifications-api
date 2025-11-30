@@ -39,6 +39,16 @@ func main() {
 		internal.EnvOrDefault("SMTP_MAIL_URL", "smtp://localhost:2225"),
 		"SMTP URL for mail client",
 	)
+	smtpDefaultSenderName := flag.String(
+		"smtp-default-sender-name",
+		internal.EnvOrDefault("SMTP_DEFAULT_SENDER_NAME", "Mail API"),
+		"SMTP default sender name for mails",
+	)
+	smtpDefaultSenderAddress := flag.String(
+		"smtp-default-sender-address",
+		internal.EnvOrDefault("SMTP_DEFAULT_SENDER_ADDRESS", "serviceaccount@ethz.ch"),
+		"SMTP default sender address for mails",
+	)
 	smtpPlainAuthUsername := flag.String(
 		"smtp-plain-auth-username",
 		internal.EnvOrDefault("SMTP_PLAIN_AUTH_USERNAME", ""),
@@ -48,6 +58,11 @@ func main() {
 		"smtp-plain-auth-password",
 		internal.EnvOrDefault("SMTP_PLAIN_AUTH_PASSWORD", ""),
 		"SMTP plain auth password",
+	)
+	messageIDSuffix := flag.String(
+		"message-id-suffix",
+		internal.EnvOrDefault("SMTP_MESSAGE_ID_SUFFIX", "mail-api"),
+		"Message ID suffix",
 	)
 
 	// Auth flags
@@ -141,6 +156,9 @@ func main() {
 		"Logging only":         *loggingOnly,
 		"gRPC server address":  *addrFlag,
 		"SMTP endpoint":        *smtpEndpoint,
+		"SMTP sender name":     *smtpDefaultSenderName,
+		"SMTP sender address":  *smtpDefaultSenderAddress,
+		"SMTP Username":        *smtpPlainAuthUsername,
 		"Database URL":         *dsnFlag,
 		"Migrations dir":       *migrationsDir,
 		"Export OTEL Metrics:": *exportOtelMetrics,
@@ -206,9 +224,11 @@ func main() {
 	}
 
 	mailSender, err := mailer.NewMailSender(
-		"serviceaccount@vis.ethz.ch",
+		*smtpDefaultSenderAddress,
+		*smtpDefaultSenderName,
 		*smtpEndpoint,
 		auth,
+		*messageIDSuffix,
 	)
 	if err != nil {
 		logrus.Fatalf("Failed to create mail sender: %v", err)

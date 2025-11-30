@@ -106,7 +106,7 @@ func (s *MailServer) preprocessIncomingMailRequest(ctx context.Context, mailReq 
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "Failed to generate uuid: %v", err)
 	}
-	messageID := fmt.Sprintf("%s@%s", messageUUID.String(), "mail-api-vis")
+	messageID := fmt.Sprintf("%s@%s", messageUUID.String(), s.mailSender.MessageIDSuffix())
 
 	logger := s.logger.WithFields(logrus.Fields{
 		"message-id": messageID,
@@ -123,7 +123,7 @@ func (s *MailServer) preprocessIncomingMailRequest(ctx context.Context, mailReq 
 
 	logger.Trace("Transforming & sanitizing proto mail format to internal formats...")
 
-	sanitizedMail, err := pbMailToSanitizedMail(mailReq, s.mailSender.DefaultSenderAddress())
+	sanitizedMail, err := pbMailToSanitizedMail(mailReq, s.mailSender.DefaultSenderName(), s.mailSender.DefaultSenderAddress())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Provided message was invalid: %v", err)
 	}
@@ -164,13 +164,13 @@ func (s *MailServer) checkSendPermission(claims *auth.CustomClaims, message *mai
 	return errors.Join(permErrors...)
 }
 
-func pbMailToSanitizedMail(mailReq *pb.Mail, defaultSender string) (*mailer.Mail, error) {
+func pbMailToSanitizedMail(mailReq *pb.Mail, defaultSenderName, defaultSenderAddress string) (*mailer.Mail, error) {
 	if mailReq.From == nil {
 		mailReq.From = &pb.MailAddress{
 			Address: &pb.MailAddress_MailAddress{
 				MailAddress: &pb.MailAddress_Address{
-					Name:    "Serviceaccount Mail API",
-					Address: defaultSender,
+					Name:    defaultSenderName,
+					Address: defaultSenderAddress,
 				},
 			},
 		}
