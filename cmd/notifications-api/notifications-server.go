@@ -28,6 +28,8 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func main() {
@@ -49,14 +51,14 @@ func main() {
 		internal.EnvOrDefault("SMTP_DEFAULT_SENDER_ADDRESS", "serviceaccount@ethz.ch"),
 		"SMTP default sender address for mails",
 	)
-	smtpPlainAuthUsername := flag.String(
-		"smtp-plain-auth-username",
-		internal.EnvOrDefault("SMTP_PLAIN_AUTH_USERNAME", ""),
+	smtpAuthLoginUsername := flag.String(
+		"smtp-auth-login-username",
+		internal.EnvOrDefault("SMTP_AUTH_LOGIN_USERNAME", ""),
 		"SMTP plain auth username",
 	)
-	smtpPlainAuthPassword := flag.String(
-		"smtp-plain-auth-password",
-		internal.EnvOrDefault("SMTP_PLAIN_AUTH_PASSWORD", ""),
+	smtpAuthLoginPassword := flag.String(
+		"smtp-auth-login-password",
+		internal.EnvOrDefault("SMTP_AUTH_LOGIN_PASSWORD", ""),
 		"SMTP plain auth password",
 	)
 	messageIDSuffix := flag.String(
@@ -158,7 +160,7 @@ func main() {
 		"SMTP endpoint":        *smtpEndpoint,
 		"SMTP sender name":     *smtpDefaultSenderName,
 		"SMTP sender address":  *smtpDefaultSenderAddress,
-		"SMTP Username":        *smtpPlainAuthUsername,
+		"SMTP Username":        *smtpAuthLoginUsername,
 		"Database URL":         *dsnFlag,
 		"Migrations dir":       *migrationsDir,
 		"Export OTEL Metrics:": *exportOtelMetrics,
@@ -213,13 +215,13 @@ func main() {
 	)
 
 	var auth *mailer.SMTPAuth
-	if (*smtpPlainAuthUsername == "") != (*smtpPlainAuthPassword == "") {
+	if (*smtpAuthLoginUsername == "") != (*smtpAuthLoginPassword == "") {
 		logrus.Fatalf("One of plain auth username or password was set, but not both...")
 	}
-	if *smtpPlainAuthPassword != "" {
+	if *smtpAuthLoginPassword != "" {
 		auth = &mailer.SMTPAuth{
-			Username: *smtpPlainAuthUsername,
-			Password: *smtpPlainAuthPassword,
+			Username: *smtpAuthLoginUsername,
+			Password: *smtpAuthLoginPassword,
 		}
 	}
 
@@ -250,6 +252,8 @@ func main() {
 		slackClient,
 	)
 
+	healthcheck := health.NewServer()
+	grpc_health_v1.RegisterHealthServer(grpcServer, healthcheck)
 	pb.RegisterSlackMessagingServiceServer(grpcServer, slackServer)
 
 	eg, ctx := errgroup.WithContext(context.Background())
