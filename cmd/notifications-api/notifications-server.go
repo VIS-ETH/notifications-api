@@ -161,7 +161,7 @@ func main() {
 		"SMTP sender name":     *smtpDefaultSenderName,
 		"SMTP sender address":  *smtpDefaultSenderAddress,
 		"SMTP Username":        *smtpAuthLoginUsername,
-		"Database URL":         *dsnFlag,
+		//"Database URL":         *dsnFlag,
 		"Migrations dir":       *migrationsDir,
 		"Export OTEL Metrics:": *exportOtelMetrics,
 		"Export OTEL Traces:":  *exportOtelTraces,
