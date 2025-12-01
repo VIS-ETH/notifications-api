@@ -139,7 +139,7 @@ Install grpcui for example via brew, or go, or any other package manager.
 Note that you will need the slack key to actually test the system.
 To start it, use the following command:
 
-```
+```bash
 cd servis
 grpcui -proto sip/notifications/notifications.proto -plaintext localhost:6781
 ```
@@ -151,7 +151,7 @@ This will automatically open your browser and give you a GUI to interact with th
 To test the gRPC API over a CLI (like `curl`), you can use grpcurl.
 An example request / usage is left here:
 
-```
+```bash
 cd servis
 grpcurl -plaintext -proto sip/notifications/mail.proto -d '{
   "replyTo": [
