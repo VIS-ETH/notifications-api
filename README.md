@@ -4,11 +4,6 @@ The notifications API is a central API in VIS / VSETH that manages any kind of n
 Its interfaces are defined by the `sip.notifications` protos, and they are exposed via gRPC.
 If required, the [REST proxy](https://gitlab.ethz.ch/vseth/0403-isg/sip-api-apps/proto-restful-proxy) can be used to make it accessible via REST.
 
-> [!warning]
-> Note that audit logs are specifically left out in a database: they should be managed via storing the logs of the application itself.
-> We do not want to store them forever in a database, this seems easier in general.
-> The database only exists to support queuing messages and to support other potential essential functionality.
-
 [TOC]
 
 ## Introduction
@@ -208,3 +203,27 @@ grpcurl -plaintext -proto sip/notifications/mail.proto -d '{
   "plainText": "Hey student,\n\nAbort mission and return back to studies...\n\nPlease....\n\n\n\n\nWarm regards,\nYour predecessors"
 }' localhost:6781 sip.notifications.MailService/SendMail
 ```
+
+## For administrators
+
+Finally, here a few notes for administrators - what to do in case of errors and audit logs etc.
+
+### Audit Logs
+
+Audit logs _should_ be implemented by properly storing the logs of this API.
+Storing all messages forever in the database is not something desirable.
+However, the database does contain the last sent messages for a fixed, short period of time.
+
+### Handling failed queued messages
+
+> [!caution]
+> Audit logs are only provided where API itself provides authentication (mails), and not where it is managed externally (Slack).
+> We do expect the users to handle logs appropriately for logging purposes.
+
+Some queuing RPC endpoints must be exposed via the proto.
+These queued messages can fail, even after retries.
+To avoid mishaps in these cases and endlessly retrying the same mails over and over again, we strongly recommend setting up alerts and using the observability features of this project.
+The worst case is probably endlessly sending the same mail over and over again, which might happen when the API cannot update the status in the database.
+The API tries to avoid this and only retries once per hour, but these are the kinds of things that must be prevented via monitoring etc.
+
+In order to handle failures in queued mails, do not hesitate to edit the database directly (even just deleting the messages).

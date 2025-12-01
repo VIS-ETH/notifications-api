@@ -61,6 +61,7 @@ func (s *MailServer) QueueMail(ctx context.Context, mailReq *pb.Mail) (*pb.Queue
 		Subject:      mailSQLEntity.Subject,
 		Body:         mailSQLEntity.Body,
 		MessageID:    mailSQLEntity.MessageID,
+		Status:       sql.MailStatusSubmitted,
 	})
 	if err != nil {
 		logger.Errorf("Failed to insert mail into queue: %v", err)
@@ -92,7 +93,35 @@ func (s *MailServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailRe
 		return mailResponse, nil
 	}
 
+	mailSQLEntity, err := database.MailToDBEntity(sanitizedMail)
+	if err != nil {
+		logger.Errorf("Failing to insert mail into DB (conversion): %v", err)
+		return nil, status.Errorf(codes.Internal, "Failed to convert mail to DB format!")
+	}
+
 	err = s.mailSender.TransmitMail(ctx, sanitizedMail)
+	if err != nil {
+		s.logger.Errorf("Failed to send mail: %v -  %v", *sanitizedMail, err)
+		return nil, status.Errorf(codes.Internal, "Failed to send mail via SMTP")
+	}
+
+	err = s.queries.CreateMail(ctx, sql.CreateMailParams{
+		FromAddress:  mailSQLEntity.FromAddress,
+		ReplyTo:      mailSQLEntity.ReplyTo,
+		ToAddresses:  mailSQLEntity.ToAddresses,
+		CcAddresses:  mailSQLEntity.CcAddresses,
+		BccAddresses: mailSQLEntity.BccAddresses,
+		ExtraHeaders: mailSQLEntity.ExtraHeaders,
+		Subject:      mailSQLEntity.Subject,
+		Body:         mailSQLEntity.Body,
+		MessageID:    mailSQLEntity.MessageID,
+		Status:       sql.MailStatusSent,
+	})
+	// To avoid retry behavior by application or other things - report success as mail was actually send
+	if err != nil {
+		logger.Errorf("Failed to insert in the database: %v", err)
+		err = nil
+	}
 
 	return &pb.MailResponse{
 		MailId: string(sanitizedMail.MessageID),
