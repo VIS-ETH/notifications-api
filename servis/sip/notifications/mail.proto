@@ -4,8 +4,26 @@ package sip.notifications;
 
 option go_package = "servis/sip/notifications";
 
+// MailService exposes a few RPCs to send mails.
+//
+// Authorization:
+// The service can implement authentication via Keycloak:
+// the "authorization" header must contain a valid "Bearer ..." token, which includes the correct notifications API client in its audience.
+// Whether or not mails are allowed to be sent is checked based on the roles in this token.
+// - The "mail" role determines whether a client is allowed to mail at all.
+// - The "mail-sender:<address>" roles determine whether a client is allowed to send mails from the sender <address>.
+// - The "mail-header:<header>" roles determine whether a client is allowed to send mails with the extra header <header>.
+// This allows VSETH to manage one central Mail client, and handle permission management for sender addresses.
 service MailService {
+  // SendMail sends a mail immediately, better for robust error handling.
+  // This RPC may take a solid while, as SMTP and the servers behind it might be quite slow.
+  // Not recommended for bursty applications due to potential rate limits!
+  // Note that these ratelimits might be triggered by other applications at the same time, so maybe implement retry behavior.
   rpc SendMail(Mail) returns (MailResponse);
+  // QueueMail puts a mail in the queue, useful for bursts and automatic retries.
+  // It is however less robust for catching errors!
+  // The status of a mail cannot be reviewed after this, any errors must be handled by an administrator.
+  // We strongly recommend setting up alerts based on exposed Prometheus / OTEL metrics to monitor the queue.
   rpc QueueMail(Mail) returns (QueueResponse);
 }
 

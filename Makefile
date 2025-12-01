@@ -20,16 +20,16 @@ codegen: clean
 	  notifications-api-codegen \
 		-c 'cp -R /app/generated /'
 else
-codegen: clean generate-protos # generate-sqlc
+codegen: clean generate-protos generate-sqlc
 endif
 
 .PHONY: clean
 clean:
 	rm -rf generated
 
-#.PHONY: generate-sqlc
-#generate-sqlc: clean
-#	cd backend && sqlc generate
+.PHONY: generate-sqlc
+generate-sqlc: clean
+	sqlc generate
 
 .PHONY: generate-protos
 generate-protos: clean
