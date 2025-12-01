@@ -44,7 +44,7 @@ The Notifications API implements a few things beyond the bare minimum for a Go p
 - We provide a full setup for local observability, see later section on how to use it.
 - In order to be persistent and handle queued mails safely, it uses a database.
 
-### Building, compiling & running
+## Building, compiling & running
 
 Building and compiling the project should be straightforward.
 The Dockerfile itself of course builds the entire project from scratch, which should be very stable.
@@ -79,7 +79,7 @@ go run cmd/notifications-api/notifications-server.go
 go run cmd/notifications-api/notifications-server.go -grpc-logging-only=false -grpc-unauthenticated -log-level trace
 ```
 
-## Observability -- showcase infrastructure
+## Observability  showcase infrastructure
 
 > [!tip]
 > To get a small feel for what we mean by observability, we encourage you to read our [observability docs](https://wiki.vseth.ethz.ch/x/KQCiL).
@@ -146,7 +146,7 @@ grpcui -proto sip/notifications/notifications.proto -plaintext localhost:6781
 
 This will automatically open your browser and give you a GUI to interact with the API.
 
-### grpcurl - CLI
+#### grpcurl - CLI
 
 To test the gRPC API over a CLI (like `curl`), you can use grpcurl.
 An example request / usage is left here:
