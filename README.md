@@ -204,6 +204,51 @@ grpcurl -plaintext -proto sip/notifications/mail.proto -d '{
 }' localhost:6781 sip.notifications.MailService/SendMail
 ```
 
+## Protocols / Available API references
+
+Here, we try to document a short list of APIs that the Notifications API either uses, or could use in case another API breaks.
+
+### Mail
+
+For Mail, Microsoft provides quite a few ways to send them and do the same thing.
+Below are a few requests that can be implemented and that are confirmed to be working to send mails as desired.
+As always with APIs, the service account (in the Microsoft world called service principals) must have appropriate permissions and roles.
+Some of them are visible in the JWT tokens themselves, others must be documented and are not visible easily.
+
+### Mail - Microsoft Graph API
+
+The below commands show how to send an email over the Graph API
+
+```bash
+CLIENT_ID=...
+CLIENT_SECRET=...
+
+SENDER_EMAIL="serviceaccount@vis.ethz.ch"
+RCPT_EMAIL="test@vis.ethz.ch"
+
+# The hardcoded ID is the ETH tenant ID in microsoft
+TOKEN=$(curl -X POST -H "Content-Type: application/x-www-form-urlencoded" -d 'client_id='"$CLIENT_ID"'&scope=https%3A%2F%2Fgraph.microsoft.com%2F.default&client_secret='"$CLIENT_SECRET"'&grant_type=client_credentials' 'https://login.microsoftonline.com/9634a6ec-a266-45a3-ab14-74c4211fc582/oauth2/v2.0/token' | yq -r '.access_token')
+curl -v -X POST "https://graph.microsoft.com/v1.0/users/$SENDER_EMAIL/sendMail" \
+-H "Authorization: Bearer $TOKEN" \
+-H "Content-Type: application/json" \
+-d '{
+  "message": {
+    "subject": "Subject of the email",
+    "body": {
+      "contentType": "Text",
+      "content": "This is the content of the email."
+    },
+    "toRecipients": [
+      {
+        "emailAddress": {
+          "address": "$RCPT_EMAIL"
+        }
+      }
+    ]
+  }
+}'
+```
+
 ## For administrators
 
 Finally, here a few notes for administrators - what to do in case of errors and audit logs etc.
