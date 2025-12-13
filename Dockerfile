@@ -1,4 +1,4 @@
-FROM golang:1.25.4-alpine AS builder
+FROM golang:1.25.5-alpine AS builder
 
 RUN apk add git \
   && go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.9 \
