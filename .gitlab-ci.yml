@@ -2,6 +2,7 @@ stages:
   - test
 
 go-tests:
+  tags: [kata]
   stage: test
   image: golang:1.26.0-alpine
   before_script:
