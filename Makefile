@@ -39,4 +39,4 @@ generate-sqlc: clean_sql
 
 .PHONY: generate-protos
 generate-protos: clean_pb
-	npx @bufbuild/buf generate
+	npm exec @bufbuild/buf generate

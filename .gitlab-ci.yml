@@ -8,7 +8,6 @@ go-tests:
   before_script:
     - go mod download
     - apk add make npm
-    - npm install -g npx
     - go generate ./...
   script:
     - go test -coverprofile=coverage.out ./...
