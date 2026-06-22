@@ -4,7 +4,7 @@ stages:
 go-tests:
   tags: [kata]
   stage: test
-  image: golang:1.26.0-alpine
+  image: golang:1.26.4-alpine
   before_script:
     - go mod download
     - apk add make npm
