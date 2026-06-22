@@ -32,12 +32,12 @@ type MailServer struct {
 	loggingOnly     *bool
 	unauthenticated *bool
 	queries         *sql.Queries
-	mailSender      *mailer.MailSender
+	mailSender      mailer.MailSender
 	logger          *logrus.Entry
 	pb.UnimplementedMailServiceServer
 }
 
-func NewMailServer(loggingOnly, unauthenticated *bool, queries *sql.Queries, mailSender *mailer.MailSender) *MailServer {
+func NewMailServer(loggingOnly, unauthenticated *bool, queries *sql.Queries, mailSender mailer.MailSender) *MailServer {
 	serverLogger := logrus.WithFields(logrus.Fields{
 		"component": "mail-message-server",
 	})

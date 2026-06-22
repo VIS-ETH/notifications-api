@@ -23,14 +23,20 @@ else
 codegen: clean generate-protos generate-sqlc
 endif
 
-.PHONY: clean
+.PHONY: clean_sql clean_pb clean
+clean_sql:
+	rm -rf generated/sql
+
+clean_pb:
+	rm -rf generated/pb
+
 clean:
 	rm -rf generated
 
 .PHONY: generate-sqlc
-generate-sqlc: clean
-	sqlc generate
+generate-sqlc: clean_sql
+	go tool sqlc generate
 
 .PHONY: generate-protos
-generate-protos: clean
+generate-protos: clean_pb
 	npx @bufbuild/buf generate

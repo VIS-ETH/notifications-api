@@ -1,4 +1,4 @@
 // This go:generate clause builds the sqlc
 
-//go:generate sqlc generate -f ../../sqlc.yaml
+//go:generate make -C ../../ generate-sqlc
 package codegen

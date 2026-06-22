@@ -29,7 +29,7 @@ var (
 
 // HandleMailQueue continuously watches the database (every minute) and
 // tries to send any remaining mail (according to rate limit rules etc.)
-func HandleMailQueue(ctx context.Context, mailSender *mailer.MailSender, queries *sql.Queries) error {
+func HandleMailQueue(ctx context.Context, mailSender mailer.MailSender, queries *sql.Queries) error {
 	logger := logrus.WithFields(logrus.Fields{
 		"component": "queue-handler",
 	})
@@ -54,7 +54,7 @@ func HandleMailQueue(ctx context.Context, mailSender *mailer.MailSender, queries
 	}
 }
 
-func popAndHandleMail(ctx context.Context, logger *logrus.Entry, queries *sql.Queries, mailSender *mailer.MailSender) (bool, error) {
+func popAndHandleMail(ctx context.Context, logger *logrus.Entry, queries *sql.Queries, mailSender mailer.MailSender) (bool, error) {
 	poppedMails, err := queries.PopMailForProcessing(ctx, pgtype.Interval{
 		Microseconds: retryFailedIntervalMicroseconds,
 	})
@@ -70,7 +70,8 @@ func popAndHandleMail(ctx context.Context, logger *logrus.Entry, queries *sql.Qu
 	poppedMail := poppedMails[0]
 
 	tr := otel.Tracer("notifications-api/queuehandler")
-	ctx, span := tr.Start(ctx, "notifications-api.handle-queued-mail",
+	ctx, span := tr.Start(
+		ctx, "notifications-api.handle-queued-mail",
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(
 			attribute.Int("mail.id", int(poppedMail.ID)),

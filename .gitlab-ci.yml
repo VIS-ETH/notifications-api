@@ -1,0 +1,20 @@
+stages:
+  - test
+
+go-tests:
+  stage: test
+  image: golang:1.26.0-alpine
+  before_script:
+    - go mod download
+    - apk add make npm
+    - npm install -g npx
+    - go generate ./...
+  script:
+    - go test -coverprofile=coverage.out ./...
+  after_script:
+    - go tool cover -html=coverage.out -o coverage.html
+  artifacts:
+    when: always
+    paths:
+      - ./coverage.out
+      - ./coverage.html

@@ -5,3 +5,6 @@ generated/
 .env.local
 /configs/local-observability/data
 /data
+
+coverage.out
+coverage.html

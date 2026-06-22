@@ -44,7 +44,7 @@ func main() {
 		logrus.Fatalf("Body should not be empty")
 	}
 
-	mailSender, err := mailer.NewMailSender(
+	mailSender, err := mailer.NewSMTPMailSender(
 		*from,
 		*fromName,
 		*smtpEndpoint,
@@ -69,7 +69,8 @@ func main() {
 				Address: *from,
 			},
 			Body: *body,
-		})
+		},
+	)
 	if err != nil {
 		logrus.Fatalf("Failed to send mail: %v", err)
 	}

@@ -15,25 +15,41 @@ option go_package = "servis/sip/notifications";
 // - The "mail-header:<header>" roles determine whether a client is allowed to send mails with the extra header <header>.
 // This allows VSETH to manage one central Mail client, and handle permission management for sender addresses.
 service MailService {
+
   // SendMail sends a mail immediately, better for robust error handling.
   // This RPC may take a solid while, as SMTP and the servers behind it might be quite slow.
   // Not recommended for bursty applications due to potential rate limits!
   // Note that these ratelimits might be triggered by other applications at the same time, so maybe implement retry behavior.
   rpc SendMail(Mail) returns (MailResponse);
+
   // QueueMail puts a mail in the queue, useful for bursts and automatic retries.
   // It is however less robust for catching errors!
   // The status of a mail cannot be reviewed after this, any errors must be handled by an administrator.
   // We strongly recommend setting up alerts based on exposed Prometheus / OTEL metrics to monitor the queue.
   rpc QueueMail(Mail) returns (QueueResponse);
+
+  // SendDryRun does not send a mail, but exists for verification reasons.
+  // It takes the same arguments than other "send" RPC functions, yet it does not
+  // actually send an email directly. Instead, it loads the mail, fills in default
+  // values, and performs permission management. This is especially useful as the
+  // API reserves filling in sender address and name, and applications might want
+  // to check before sending.
+  rpc SendDryRun(Mail) returns (Mail);
 }
 
 message Mail {
+  // Sender name and address. Might be overriden before sending, as
+  // not all backends support arbitrary mail sending (e.g. Microsoft
+  // Graph API etc.)
   optional MailAddress from = 1;
+
   repeated MailAddress reply_to = 2;
   repeated MailAddress to = 3;
   repeated MailAddress cc = 4;
   repeated MailAddress bcc = 5;
-  // Must be explicitly allowed for user
+
+  // Extra headers for the mail, must be explicitly allowed for user by
+  // roles in access tokens
   repeated ExtraHeader extra_header = 6;
   string subject = 7;
   oneof body_oneof {

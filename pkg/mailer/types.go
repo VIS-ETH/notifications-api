@@ -1,11 +1,18 @@
 package mailer
 
 import (
+	"context"
 	"fmt"
 	"net/mail"
 	"strings"
 	"time"
 )
+
+type MailSender interface {
+	GetSender(address mail.Address) mail.Address
+	MessageIDSuffix() string
+	TransmitMail(ctx context.Context, m *Mail) error
+}
 
 type Mail struct {
 	From         *mail.Address
@@ -21,17 +28,17 @@ type Mail struct {
 
 func (m *Mail) GetMessageContent() string {
 	var messageBuilder strings.Builder
-	messageBuilder.WriteString(fmt.Sprintf("Date: %s\n", time.Now().Format(time.RFC822Z)))
-	messageBuilder.WriteString(fmt.Sprintf("From: %s\n", m.From.String()))
-	messageBuilder.WriteString(fmt.Sprintf("Message-ID: <%s>\n", m.MessageID))
-	messageBuilder.WriteString(fmt.Sprintf("Subject: %s\n", m.Subject))
+	fmt.Fprintf(&messageBuilder, "Date: %s\n", time.Now().Format(time.RFC822Z))
+	fmt.Fprintf(&messageBuilder, "From: %s\n", m.From.String())
+	fmt.Fprintf(&messageBuilder, "Message-ID: <%s>\n", m.MessageID)
+	fmt.Fprintf(&messageBuilder, "Subject: %s\n", m.Subject)
 
 	if len(m.To) > 0 {
 		var toAddresses []string
 		for _, toAddr := range m.To {
 			toAddresses = append(toAddresses, toAddr.String())
 		}
-		messageBuilder.WriteString(fmt.Sprintf("To: %s\n", strings.Join(toAddresses, "\n ,")))
+		fmt.Fprintf(&messageBuilder, "To: %s\n", strings.Join(toAddresses, "\n ,"))
 	}
 
 	if len(m.Cc) > 0 {
@@ -39,7 +46,7 @@ func (m *Mail) GetMessageContent() string {
 		for _, ccAddr := range m.Cc {
 			ccAddresses = append(ccAddresses, ccAddr.String())
 		}
-		messageBuilder.WriteString(fmt.Sprintf("Cc: %s\n", strings.Join(ccAddresses, "\n ,")))
+		fmt.Fprintf(&messageBuilder, "Cc: %s\n", strings.Join(ccAddresses, "\n ,"))
 	}
 
 	if len(m.ReplyTo) > 0 {
@@ -47,7 +54,7 @@ func (m *Mail) GetMessageContent() string {
 		for _, replyToAddr := range m.ReplyTo {
 			replyToAddresses = append(replyToAddresses, replyToAddr.String())
 		}
-		messageBuilder.WriteString(fmt.Sprintf("Reply-To: %s\n", strings.Join(replyToAddresses, "\n ,")))
+		fmt.Fprintf(&messageBuilder, "Reply-To: %s\n", strings.Join(replyToAddresses, "\n ,"))
 	}
 
 	messageBuilder.WriteString("\n")

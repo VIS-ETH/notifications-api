@@ -1,4 +1,4 @@
 // This go:generate clause builds the sqlc
 
-//go:generate sh -c "cd ../.. && make -o clean generate-protos"
+//go:generate make -C ../.. generate-protos
 package codegen

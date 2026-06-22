@@ -112,11 +112,13 @@ func main() {
 	exportOtelTraces := flag.Bool(
 		"export-otel-traces",
 		internal.EnvOrDefault("EXPORT_OTEL_TRACES", "false") == "true",
-		"Export traces to OTEL endpoints")
+		"Export traces to OTEL endpoints",
+	)
 	exportOtelMetrics := flag.Bool(
 		"export-otel-metrics",
 		internal.EnvOrDefault("EXPORT_OTEL_METRICS", "false") == "true",
-		"Export metrics to OTEL endpoints")
+		"Export metrics to OTEL endpoints",
+	)
 	prometheusExporterAddr := flag.String(
 		"prometheus-exporter-addr",
 		internal.EnvOrDefault("PROMETHEUS_EXPORTER_ADDR", ":9001"),
@@ -179,7 +181,8 @@ func main() {
 	}
 
 	res, err := resource.Merge(resource.Default(),
-		resource.NewWithAttributes(semconv.SchemaURL,
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
 			semconv.ServiceName("notifications-server"),
 		))
 	if err != nil {
@@ -225,7 +228,7 @@ func main() {
 		}
 	}
 
-	mailSender, err := mailer.NewMailSender(
+	mailSender, err := mailer.NewSMTPMailSender(
 		*smtpDefaultSenderAddress,
 		*smtpDefaultSenderName,
 		*smtpEndpoint,

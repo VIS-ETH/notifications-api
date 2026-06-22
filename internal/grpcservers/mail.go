@@ -15,6 +15,7 @@ import (
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -128,6 +129,52 @@ func (s *MailServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailRe
 	}, err
 }
 
+func (s *MailServer) SendDryRun(ctx context.Context, mailReq *pb.Mail) (*pb.Mail, error) {
+	sanitizedMail, err := s.preprocessIncomingMailRequest(ctx, mailReq)
+	if err != nil {
+		return nil, err
+	}
+
+	logger := s.logger.WithFields(logrus.Fields{
+		MessageIDLoggerField: sanitizedMail.MessageID,
+		RPCMethodLoggerField: "dryrun-mail",
+	})
+
+	mailSQLEntity, err := database.MailToDBEntity(sanitizedMail)
+	if err != nil {
+		logger.Errorf("Failing to insert mail into DB (conversion): %v", err)
+		return nil, status.Errorf(codes.Internal, "Failed to convert mail to DB format!")
+	}
+
+	err = s.mailSender.TransmitMail(ctx, sanitizedMail)
+	if err != nil {
+		s.logger.Errorf("Failed to send mail: %v -  %v", *sanitizedMail, err)
+		return nil, status.Errorf(codes.Internal, "Failed to send mail via SMTP")
+	}
+
+	err = s.queries.CreateMail(ctx, sql.CreateMailParams{
+		FromAddress:  mailSQLEntity.FromAddress,
+		ReplyTo:      mailSQLEntity.ReplyTo,
+		ToAddresses:  mailSQLEntity.ToAddresses,
+		CcAddresses:  mailSQLEntity.CcAddresses,
+		BccAddresses: mailSQLEntity.BccAddresses,
+		ExtraHeaders: mailSQLEntity.ExtraHeaders,
+		Subject:      mailSQLEntity.Subject,
+		Body:         mailSQLEntity.Body,
+		MessageID:    mailSQLEntity.MessageID,
+		Status:       sql.MailStatusSent,
+	})
+	// To avoid retry behavior by application or other things - report success as mail was actually send
+	if err != nil {
+		logger.Errorf("Failed to insert in the database: %v", err)
+		err = nil
+	}
+
+	copy := proto.CloneOf(mailReq)
+	// copy.From =
+	return copy, err
+}
+
 func (s *MailServer) preprocessIncomingMailRequest(ctx context.Context, mailReq *pb.Mail) (*mailer.Mail, error) {
 	s.logger.Trace("Generating UUID for message...")
 
@@ -152,7 +199,11 @@ func (s *MailServer) preprocessIncomingMailRequest(ctx context.Context, mailReq 
 
 	logger.Trace("Transforming & sanitizing proto mail format to internal formats...")
 
-	sanitizedMail, err := pbMailToSanitizedMail(mailReq, s.mailSender.DefaultSenderName(), s.mailSender.DefaultSenderAddress())
+	desiredSender := mail.Address{
+		Name:    mailReq.From.GetMailAddress().Name,
+		Address: mailReq.From.GetMailAddress().Address,
+	}
+	sanitizedMail, err := pbMailToSanitizedMail(mailReq, s.mailSender.GetSender(desiredSender))
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Provided message was invalid: %v", err)
 	}
@@ -179,9 +230,7 @@ func (s *MailServer) checkSendPermission(claims *auth.CustomClaims, message *mai
 		permErrors = append(permErrors, errors.New("not allowed to send mails via Notifications API"))
 	}
 
-	// Everyone is allowed to send as the default - if allowed to send at all
-	isSenderAllowed := (message.From.Address == s.mailSender.DefaultSenderAddress()) ||
-		claims.IsSenderAllowed(&message.From.Address)
+	isSenderAllowed := claims.IsSenderAllowed(&message.From.Address)
 
 	if !isSenderAllowed {
 		permErrors = append(permErrors, fmt.Errorf("not allowed to send from address: %s", message.From.Address))
@@ -193,13 +242,13 @@ func (s *MailServer) checkSendPermission(claims *auth.CustomClaims, message *mai
 	return errors.Join(permErrors...)
 }
 
-func pbMailToSanitizedMail(mailReq *pb.Mail, defaultSenderName, defaultSenderAddress string) (*mailer.Mail, error) {
+func pbMailToSanitizedMail(mailReq *pb.Mail, from mail.Address) (*mailer.Mail, error) {
 	if mailReq.From == nil {
 		mailReq.From = &pb.MailAddress{
 			Address: &pb.MailAddress_MailAddress{
 				MailAddress: &pb.MailAddress_Address{
-					Name:    defaultSenderName,
-					Address: defaultSenderAddress,
+					Name:    from.Name,
+					Address: from.Address,
 				},
 			},
 		}
@@ -283,7 +332,8 @@ func transformAddressFormatsToPlainAddress(addr *pb.MailAddress) (*mail.Address,
 		if parsedAddress.Address != addr.MailAddress.Address {
 			return nil, fmt.Errorf(
 				"parsed plain address differred from supposed-to-be-plain address: '%s' vs '%s'",
-				parsedAddress.Address, addr.MailAddress.Address)
+				parsedAddress.Address, addr.MailAddress.Address,
+			)
 		}
 		stdMailAddr := mail.Address{
 			Name:    addr.MailAddress.Name,

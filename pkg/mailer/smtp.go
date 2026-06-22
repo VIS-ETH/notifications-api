@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/mail"
 	"net/smtp"
 	"net/url"
 	"slices"
@@ -17,7 +18,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type MailSender struct {
+type SMTPMailSender struct {
 	defaultMailSenderAddress string
 	defaultMailSenderName    string
 	smtpEndpoint             url.URL
@@ -27,12 +28,13 @@ type MailSender struct {
 	auth                     *SMTPAuth
 }
 
-func NewMailSender(defaultSenderAddress, defaultSenderName, smtpEndpoint string, smtpAuth *SMTPAuth, messageIDSuffix string) (*MailSender, error) {
+func NewSMTPMailSender(defaultSenderAddress, defaultSenderName, smtpEndpoint string, smtpAuth *SMTPAuth, messageIDSuffix string) (*SMTPMailSender, error) {
 	mailLogger := logrus.WithFields(logrus.Fields{
-		"component": "mail",
+		"component": "smtp-mail",
 	})
 	meter := otel.Meter("mailer-meter")
-	counter, err := meter.Int64Counter("mail_sender_total_mail_count",
+	counter, err := meter.Int64Counter(
+		"mail_sender_total_mail_count",
 		metric.WithDescription("Total mails sent by mailer"),
 		metric.WithUnit("{call}"),
 	)
@@ -45,7 +47,7 @@ func NewMailSender(defaultSenderAddress, defaultSenderName, smtpEndpoint string,
 		return nil, fmt.Errorf("could not parse SMTP endpoint as URL: %v", err)
 	}
 
-	return &MailSender{
+	return &SMTPMailSender{
 		defaultMailSenderAddress: defaultSenderAddress,
 		defaultMailSenderName:    defaultSenderName,
 		smtpEndpoint:             *smtpEndpointURL,
@@ -56,19 +58,21 @@ func NewMailSender(defaultSenderAddress, defaultSenderName, smtpEndpoint string,
 	}, nil
 }
 
-func (s *MailSender) DefaultSenderAddress() string {
-	return s.defaultMailSenderAddress
+func (s *SMTPMailSender) GetSender(from mail.Address) mail.Address {
+	if from.Name == "" {
+		from.Name = s.defaultMailSenderName
+	}
+	if from.Address == "" {
+		from.Address = s.defaultMailSenderAddress
+	}
+	return from
 }
 
-func (s *MailSender) DefaultSenderName() string {
-	return s.defaultMailSenderName
-}
-
-func (s *MailSender) MessageIDSuffix() string {
+func (s *SMTPMailSender) MessageIDSuffix() string {
 	return s.messageIDSuffix
 }
 
-func (s *MailSender) TransmitMail(ctx context.Context, m *Mail) error {
+func (s *SMTPMailSender) TransmitMail(ctx context.Context, m *Mail) error {
 	if m == nil {
 		return errors.New("tried to send empty mail")
 	}
@@ -81,7 +85,8 @@ func (s *MailSender) TransmitMail(ctx context.Context, m *Mail) error {
 	})
 
 	tr := otel.Tracer("mailer/sender")
-	_, span := tr.Start(ctx, "smtp.SendMail",
+	_, span := tr.Start(
+		ctx, "smtp.SendMail",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			attribute.String("smtp.from", m.From.Address),
@@ -118,7 +123,8 @@ func (s *MailSender) TransmitMail(ctx context.Context, m *Mail) error {
 	logger.Trace("Successfully written message")
 	s.mailCounter.Add(
 		context.Background(), 1,
-		metric.WithAttributes(attribute.String("smtp_endpoint", s.smtpEndpoint.Host)))
+		metric.WithAttributes(attribute.String("smtp_endpoint", s.smtpEndpoint.Host)),
+	)
 	span.SetStatus(codes.Ok, "email sent")
 
 	logger.Info("Sent mail successfully")
