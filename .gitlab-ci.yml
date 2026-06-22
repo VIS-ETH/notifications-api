@@ -1,3 +1,6 @@
+variables:
+  KUBERNETES_CPU_LIMIT: "5"
+
 stages:
   - test
 
