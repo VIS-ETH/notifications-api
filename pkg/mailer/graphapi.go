@@ -5,7 +5,6 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
-	"go.opentelemetry.io/otel/metric"
 )
 
 const (
@@ -18,7 +17,6 @@ type GraphAPIMailSender struct {
 	senderEmail string
 	tp          *auth.OidcTokenProvider
 	logger      *logrus.Entry
-	mailCounter metric.Int64Counter
 }
 
 func NewGraphAPIMailSender(tenantID, clientID, clientSecret, senderEmail string) *GraphAPIMailSender {
@@ -38,3 +36,9 @@ func NewGraphAPIMailSender(tenantID, clientID, clientSecret, senderEmail string)
 		logger:      mailLogger,
 	}
 }
+
+/*
+func (g *GraphAPIMailSender) GetSender(address mail.Address) mail.Address {
+	return address
+}
+*/

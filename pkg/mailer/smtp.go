@@ -23,7 +23,6 @@ type SMTPMailSender struct {
 	defaultMailSenderName    string
 	smtpEndpoint             url.URL
 	logger                   *logrus.Entry
-	mailCounter              metric.Int64Counter
 	messageIDSuffix          string
 	auth                     *SMTPAuth
 }
@@ -32,15 +31,6 @@ func NewSMTPMailSender(defaultSenderAddress, defaultSenderName, smtpEndpoint str
 	mailLogger := logrus.WithFields(logrus.Fields{
 		"component": "smtp-mail",
 	})
-	meter := otel.Meter("mailer-meter")
-	counter, err := meter.Int64Counter(
-		"mail_sender_total_mail_count",
-		metric.WithDescription("Total mails sent by mailer"),
-		metric.WithUnit("{call}"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create OTEL counter: %v", err)
-	}
 
 	smtpEndpointURL, err := url.Parse(smtpEndpoint)
 	if err != nil {
@@ -52,7 +42,6 @@ func NewSMTPMailSender(defaultSenderAddress, defaultSenderName, smtpEndpoint str
 		defaultMailSenderName:    defaultSenderName,
 		smtpEndpoint:             *smtpEndpointURL,
 		logger:                   mailLogger,
-		mailCounter:              counter,
 		auth:                     smtpAuth,
 		messageIDSuffix:          messageIDSuffix,
 	}, nil
@@ -121,10 +110,19 @@ func (s *SMTPMailSender) TransmitMail(ctx context.Context, m *Mail) error {
 	}
 
 	logger.Trace("Successfully written message")
-	s.mailCounter.Add(
-		context.Background(), 1,
-		metric.WithAttributes(attribute.String("smtp_endpoint", s.smtpEndpoint.Host)),
-	)
+	mo, err := getMailObservability()
+	if err != nil {
+		logger.Warnf("Failed to get mail observability! %v", err)
+	} else {
+		(*mo.counter).Add(
+			context.Background(), 1,
+			metric.WithAttributes(
+				attribute.String("impl", "smtp"),
+				attribute.String("smtp_endpoint", s.smtpEndpoint.Host),
+			),
+		)
+	}
+
 	span.SetStatus(codes.Ok, "email sent")
 
 	logger.Info("Sent mail successfully")

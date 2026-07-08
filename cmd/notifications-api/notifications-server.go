@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MicahParks/keyfunc/v3"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
@@ -24,8 +25,11 @@ import (
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/slack"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -175,9 +179,17 @@ func main() {
 	}
 	logrus.SetLevel(logLevel)
 
-	k, err := keyfunc.NewDefaultCtx(context.Background(), []string{*oidcJwksURL})
-	if err != nil {
-		logrus.Fatalf("Failed to create a keyfunc.Keyfunc from the server's URL. Error: %v", err)
+	var jwtKeyFunc func(*jwt.Token) (any, error)
+	if *unauthenticatedGrpc {
+		jwtKeyFunc = func(*jwt.Token) (any, error) {
+			return nil, nil
+		}
+	} else {
+		k, err := keyfunc.NewDefaultCtx(context.Background(), []string{*oidcJwksURL})
+		if err != nil {
+			logrus.Fatalf("Failed to create a keyfunc.Keyfunc from the server's URL. Error: %v", err)
+		}
+		jwtKeyFunc = k.Keyfunc
 	}
 
 	res, err := resource.Merge(resource.Default(),
@@ -214,7 +226,7 @@ func main() {
 
 	grpcServer := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(oidcIssuer, oidcClientID, unauthenticatedGrpc, k.Keyfunc)),
+		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(oidcIssuer, oidcClientID, unauthenticatedGrpc, jwtKeyFunc)),
 	)
 
 	var auth *mailer.SMTPAuth
@@ -228,6 +240,18 @@ func main() {
 		}
 	}
 
+	meter := otel.Meter("mailer-meter")
+	counter, err := meter.Int64Counter(
+		"mail_sender_total_mail_count",
+		metric.WithDescription("Total mails sent by mailer"),
+		metric.WithUnit("{call}"),
+	)
+	if err != nil {
+		logrus.Fatalf("failed to create OTEL counter: %v", err)
+	}
+	counter.Add(context.TODO(), 4, metric.WithAttributes(attribute.String("impl", "smtp")))
+	counter.Add(context.TODO(), 4, metric.WithAttributes(attribute.String("impl", "test")))
+
 	mailSender, err := mailer.NewSMTPMailSender(
 		*smtpDefaultSenderAddress,
 		*smtpDefaultSenderName,
@@ -240,8 +264,8 @@ func main() {
 	}
 
 	mailServer := grpcservers.NewMailServer(
-		loggingOnly,
-		unauthenticatedGrpc,
+		*loggingOnly,
+		*unauthenticatedGrpc,
 		queries,
 		mailSender,
 	)

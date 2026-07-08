@@ -1,5 +1,5 @@
 variables:
-  KUBERNETES_CPU_LIMIT: "5"
+  KUBERNETES_CPU_LIMIT: "8"
 
 stages:
   - test
@@ -16,8 +16,15 @@ go-tests:
     - go test -coverprofile=coverage.out ./...
   after_script:
     - go tool cover -html=coverage.out -o coverage.html
+    - go get github.com/boumenot/gocover-cobertura
+    - go run github.com/boumenot/gocover-cobertura < coverage.out > coverage.xml
   artifacts:
     when: always
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
     paths:
+      - ./coverage.xml
       - ./coverage.out
       - ./coverage.html

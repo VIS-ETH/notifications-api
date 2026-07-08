@@ -42,7 +42,8 @@ func SetupMetrics(ctx context.Context, exportOtelMetrics bool, res *resource.Res
 		return nil, fmt.Errorf("failed to create Prometheus exporter: %v", err)
 	}
 
-	options = append(options,
+	options = append(
+		options,
 		metric.WithResource(res),
 		metric.WithReader(promExporter),
 	)

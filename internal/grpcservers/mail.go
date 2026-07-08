@@ -34,7 +34,7 @@ func (s *MailServer) QueueMail(ctx context.Context, mailReq *pb.Mail) (*pb.Queue
 		RPCMethodLoggerField: "queue-mail",
 	})
 
-	if *s.loggingOnly {
+	if s.loggingOnly {
 		mailResponse := &pb.MailResponse{
 			MailId: sanitizedMail.MessageID,
 		}
@@ -52,7 +52,7 @@ func (s *MailServer) QueueMail(ctx context.Context, mailReq *pb.Mail) (*pb.Queue
 		return nil, status.Errorf(codes.Internal, "Failed to convert mail to DB format!")
 	}
 
-	err = s.queries.CreateMail(ctx, sql.CreateMailParams{
+	err = s.querier.CreateMail(ctx, sql.CreateMailParams{
 		FromAddress:  mailSQLEntity.FromAddress,
 		ReplyTo:      mailSQLEntity.ReplyTo,
 		ToAddresses:  mailSQLEntity.ToAddresses,
@@ -84,7 +84,7 @@ func (s *MailServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailRe
 		RPCMethodLoggerField: "send-mail",
 	})
 
-	if *s.loggingOnly {
+	if s.loggingOnly {
 		mailResponse := &pb.MailResponse{
 			MailId: sanitizedMail.MessageID,
 		}
@@ -106,7 +106,7 @@ func (s *MailServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailRe
 		return nil, status.Errorf(codes.Internal, "Failed to send mail via SMTP")
 	}
 
-	err = s.queries.CreateMail(ctx, sql.CreateMailParams{
+	err = s.querier.CreateMail(ctx, sql.CreateMailParams{
 		FromAddress:  mailSQLEntity.FromAddress,
 		ReplyTo:      mailSQLEntity.ReplyTo,
 		ToAddresses:  mailSQLEntity.ToAddresses,
@@ -152,7 +152,7 @@ func (s *MailServer) SendDryRun(ctx context.Context, mailReq *pb.Mail) (*pb.Mail
 		return nil, status.Errorf(codes.Internal, "Failed to send mail via SMTP")
 	}
 
-	err = s.queries.CreateMail(ctx, sql.CreateMailParams{
+	err = s.querier.CreateMail(ctx, sql.CreateMailParams{
 		FromAddress:  mailSQLEntity.FromAddress,
 		ReplyTo:      mailSQLEntity.ReplyTo,
 		ToAddresses:  mailSQLEntity.ToAddresses,
@@ -184,13 +184,21 @@ func (s *MailServer) preprocessIncomingMailRequest(ctx context.Context, mailReq 
 	}
 	messageID := fmt.Sprintf("%s@%s", messageUUID.String(), s.mailSender.MessageIDSuffix())
 
+	if len(mailReq.To) == 0 && len(mailReq.Cc) == 0 && len(mailReq.Bcc) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "Provided message had no receiver! To/Cc/Bcc all empty!")
+	}
+
+	if mailReq.Subject == "" || mailReq.BodyOneof == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "Provided message had no content, pass subject and body!")
+	}
+
 	logger := s.logger.WithFields(logrus.Fields{
 		"message-id": messageID,
 	})
 
 	claims, err := auth.GetClaimsFromEnrichedGrpcCtx(ctx)
 	if err != nil {
-		if *s.unauthenticated {
+		if s.unauthenticated {
 			logger.Debugf("Unauthenticated mode: running request with failed authorization check: %v", err)
 		} else {
 			return nil, err
@@ -199,11 +207,18 @@ func (s *MailServer) preprocessIncomingMailRequest(ctx context.Context, mailReq 
 
 	logger.Trace("Transforming & sanitizing proto mail format to internal formats...")
 
-	desiredSender := mail.Address{
-		Name:    mailReq.From.GetMailAddress().Name,
-		Address: mailReq.From.GetMailAddress().Address,
+	var sender mail.Address
+	if mailReq == nil || mailReq.From == nil || mailReq.From.GetMailAddress() == nil {
+		sender = s.mailSender.GetSender(mail.Address{})
+	} else {
+		desiredSender := mail.Address{
+			Name:    mailReq.From.GetMailAddress().Name,
+			Address: mailReq.From.GetMailAddress().Address,
+		}
+		sender = s.mailSender.GetSender(desiredSender)
 	}
-	sanitizedMail, err := pbMailToSanitizedMail(mailReq, s.mailSender.GetSender(desiredSender))
+	s.logger.Errorf("test: %v", sender)
+	sanitizedMail, err := pbMailToSanitizedMail(mailReq, sender)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Provided message was invalid: %v", err)
 	}
@@ -213,7 +228,7 @@ func (s *MailServer) preprocessIncomingMailRequest(ctx context.Context, mailReq 
 
 	err = s.checkSendPermission(claims, sanitizedMail)
 	if err != nil {
-		if *s.unauthenticated {
+		if s.unauthenticated {
 			logger.Debugf("Unauthenticated mode: some values are not permitted... %v", err)
 		} else {
 			return nil, status.Errorf(codes.PermissionDenied, "Cannot send mails: %v", err)
@@ -243,20 +258,18 @@ func (s *MailServer) checkSendPermission(claims *auth.CustomClaims, message *mai
 }
 
 func pbMailToSanitizedMail(mailReq *pb.Mail, from mail.Address) (*mailer.Mail, error) {
-	if mailReq.From == nil {
-		mailReq.From = &pb.MailAddress{
-			Address: &pb.MailAddress_MailAddress{
-				MailAddress: &pb.MailAddress_Address{
-					Name:    from.Name,
-					Address: from.Address,
-				},
+	mailReq.From = &pb.MailAddress{
+		Address: &pb.MailAddress_MailAddress{
+			MailAddress: &pb.MailAddress_Address{
+				Name:    from.Name,
+				Address: from.Address,
 			},
-		}
+		},
 	}
 
 	fromAddr, err := transformAddressFormatsToPlainAddress(mailReq.From)
 	if err != nil {
-		return nil, fmt.Errorf("sender address could not be converted and sanitized")
+		return nil, fmt.Errorf("sender address could not be converted and sanitized: %v", err)
 	}
 
 	transformedReplyToAddresses, err := transformAddressLists(mailReq.ReplyTo)
