@@ -4,6 +4,13 @@ The notifications API is a central API in VIS / VSETH that manages any kind of n
 Its interfaces are defined by the `sip.notifications` protos, and they are exposed via gRPC.
 If required, the [REST proxy](https://gitlab.ethz.ch/vseth/0403-isg/sip-api-apps/proto-restful-proxy) can be used to make it accessible via REST.
 
+Furthermore, in order to benefit from logging, permission management, auditing and other nice-to-haves
+that are included directly in the API, it includes an SMTP proxy server, that can receive messages and
+relay them to the notifications API via gRPC. This is useful, especially in the context of off-the-shelf
+applications or just to adhere to standard SMTP, all while keeping the benefits of a self-managed API.
+This is mostly supposed to be deployed as sidecar container within Kubernetes for example, or similar
+use cases.
+
 [TOC]
 
 ## Introduction
