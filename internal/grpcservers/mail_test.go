@@ -30,56 +30,45 @@ const (
 	TestMailContentSanitized = "Mail\nTest\rContent\n\ryeah\n\n\n\nTest"
 )
 
-func makePbAddress(name, address string) *pb.MailAddress {
-	return &pb.MailAddress{
-		Address: &pb.MailAddress_MailAddress{
-			MailAddress: &pb.MailAddress_Address{
-				Address: address,
-				Name:    name,
-			},
-		},
-	}
-}
-
 func TestGrpcServerSendMailInvalid(t *testing.T) {
 	querier := mockery_sql.NewMockQuerier(t)
-	mailer := mockery_mailer.NewMockMailSender(t)
+	mockMailer := mockery_mailer.NewMockMailSender(t)
 
 	mailGrpcServer := grpcservers.NewMailServer(
 		false,
 		true,
 		querier,
-		mailer,
+		mockMailer,
 	)
 
-	mailer.EXPECT().MessageIDSuffix().Return("testing-mail-suffix").Once()
+	mockMailer.EXPECT().MessageIDSuffix().Return("testing-mail-suffix").Once()
 	_, err := mailGrpcServer.SendMail(context.TODO(), &pb.Mail{})
 	assert.Error(t, err)
-	mailer.AssertExpectations(t)
+	mockMailer.AssertExpectations(t)
 
-	mailer.EXPECT().MessageIDSuffix().Return("testing-mail-suffix").Once()
+	mockMailer.EXPECT().MessageIDSuffix().Return("testing-mail-suffix").Once()
 	_, err = mailGrpcServer.SendMail(context.TODO(), &pb.Mail{
-		From: makePbAddress(TestFromName, TestFromAddress),
+		From: mailer.MakePbAddress(TestFromName, TestFromAddress),
 	})
 	assert.Error(t, err)
-	mailer.AssertExpectations(t)
+	mockMailer.AssertExpectations(t)
 
-	mailer.EXPECT().MessageIDSuffix().Return("testing-mail-suffix").Once()
+	mockMailer.EXPECT().MessageIDSuffix().Return("testing-mail-suffix").Once()
 	_, err = mailGrpcServer.SendMail(context.TODO(), &pb.Mail{
-		From: makePbAddress(TestFromName, TestFromAddress),
-		To:   []*pb.MailAddress{makePbAddress(TestTo1Name, TestTo1Address)},
+		From: mailer.MakePbAddress(TestFromName, TestFromAddress),
+		To:   []*pb.MailAddress{mailer.MakePbAddress(TestTo1Name, TestTo1Address)},
 	})
 	assert.Error(t, err)
-	mailer.AssertExpectations(t)
+	mockMailer.AssertExpectations(t)
 
-	mailer.EXPECT().MessageIDSuffix().Return("testing-mail-suffix").Once()
+	mockMailer.EXPECT().MessageIDSuffix().Return("testing-mail-suffix").Once()
 	_, err = mailGrpcServer.SendMail(context.TODO(), &pb.Mail{
-		From:      makePbAddress(TestFromName, TestFromAddress),
+		From:      mailer.MakePbAddress(TestFromName, TestFromAddress),
 		Subject:   TestMailSubject,
 		BodyOneof: &pb.Mail_PlainText{PlainText: TestMailContent},
 	})
 	assert.Error(t, err)
-	mailer.AssertExpectations(t)
+	mockMailer.AssertExpectations(t)
 }
 
 func TestGrpcServerMailLoggingOnly(t *testing.T) {
@@ -93,9 +82,9 @@ func TestGrpcServerMailLoggingOnly(t *testing.T) {
 		mockMailer,
 	)
 
-	from := makePbAddress(TestFromName, TestFromAddress)
+	from := mailer.MakePbAddress(TestFromName, TestFromAddress)
 
-	to := []*pb.MailAddress{makePbAddress(TestTo1Name, TestTo1Address)}
+	to := []*pb.MailAddress{mailer.MakePbAddress(TestTo1Name, TestTo1Address)}
 
 	fromAddr := mail.Address{Name: TestFromName, Address: TestFromAddress}
 	calls := []*mock.Call{
@@ -127,9 +116,9 @@ func TestGrpcServerSendMailWorks(t *testing.T) {
 		mockMailer,
 	)
 
-	from := makePbAddress(TestFromName, TestFromAddress)
+	from := mailer.MakePbAddress(TestFromName, TestFromAddress)
 
-	to := []*pb.MailAddress{makePbAddress(TestTo1Name, TestTo1Address)}
+	to := []*pb.MailAddress{mailer.MakePbAddress(TestTo1Name, TestTo1Address)}
 
 	fromAddr := mail.Address{Name: TestFromName, Address: TestFromAddress}
 
@@ -203,8 +192,8 @@ func TestTransientErrors(t *testing.T) {
 		mockMailer,
 	)
 
-	from := makePbAddress(TestFromName, TestFromAddress)
-	to := []*pb.MailAddress{makePbAddress(TestTo1Name, TestTo1Address)}
+	from := mailer.MakePbAddress(TestFromName, TestFromAddress)
+	to := []*pb.MailAddress{mailer.MakePbAddress(TestTo1Name, TestTo1Address)}
 
 	mailSuffix := "testing-mail-suffix"
 	fromAddr := mail.Address{Name: TestFromAllowedName, Address: TestFromAllowedAddress}

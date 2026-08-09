@@ -7,7 +7,8 @@ services:
       postgres:
         condition: service_healthy
     env_file:
-      - .env.local
+      - required: false
+        path: .env.local
     environment:
       NOTIFICATIONS_UNAUTHENTICATED: true
       #NOTIFICATIONS_LOGGING_ONLY: false
