@@ -15,17 +15,15 @@ COPY sqlc.yaml ./
 COPY sql sql
 RUN go tool sqlc generate
 
-COPY cmd cmd
-COPY pkg pkg
-COPY internal internal
+COPY . .
 
-RUN go build cmd/notifications-api/notifications-server.go
+RUN CGO_ENABLED=0 go build cmd/notifications-api/notifications-server.go
 
-FROM gcr.io/distroless/base
+FROM gcr.io/distroless/static-debian13:nonroot
 
 COPY --from=builder /app/notifications-server /
 COPY sql/migrations /sql/migrations
 
 ENV MIGRATIONS_DIR=/sql/migrations
 
-ENTRYPOINT ["/notifications-server"]
+CMD ["/notifications-server"]

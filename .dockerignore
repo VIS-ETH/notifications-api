@@ -1,0 +1,21 @@
+/.git
+/.gitlab-ci.yml
+/.mockery.yml
+
+/testdata
+/configs
+/generated
+
+/LICENSE
+/README.md
+
+/Dockerfile
+/Makefile
+/compose.yaml
+/renovate.json
+
+# Binaries
+/smtp-proxy
+/notifications-server
+/notifications-api
+/mail-sender

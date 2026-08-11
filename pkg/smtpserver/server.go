@@ -2,16 +2,14 @@ package smtpserver
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"net/mail"
 	"strings"
-	"time"
 
 	"github.com/emersion/go-smtp"
+	"github.com/sirupsen/logrus"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
 )
 
@@ -21,19 +19,36 @@ type Backend struct {
 	handleMessage messageHandler
 }
 
+/*
+netcat -C localhost 1025
+EHLO localhost
+MAIL FROM:<root@nsa.gov>
+RCPT TO:<root@gchq.gov.uk>
+DATA
+From: <root@nsa.gov>
+Subject: Test
+
+Hey <3
+*/
 func NewBackend(handleMessage messageHandler) *Backend {
 	return &Backend{handleMessage: handleMessage}
 }
 
 func (bkd *Backend) NewSession(c *smtp.Conn) (smtp.Session, error) {
+	logger := logrus.WithFields(logrus.Fields{
+		"component": "smtpserver",
+	})
+
 	return &session{
 		backend: bkd,
+		logger:  logger,
 	}, nil
 }
 
 type session struct {
 	// auth    bool
 	backend *Backend
+	logger  *logrus.Entry
 
 	from       string
 	recipients []string
@@ -216,44 +231,4 @@ func decodeRFC2047(s string) string {
 		return s // fallback to raw
 	}
 	return d
-}
-
-/*
-netcat -C localhost 1025
-EHLO localhost
-MAIL FROM:<root@nsa.gov>
-RCPT TO:<root@gchq.gov.uk>
-DATA
-From: <root@nsa.gov>
-Subject: Test
-
-Hey <3
-*/
-func ExampleServer() {
-	be := &Backend{}
-
-	s := smtp.NewServer(be)
-
-	s.Addr = "localhost:1025"
-	s.Domain = "localhost"
-	s.WriteTimeout = 10 * time.Second
-	s.ReadTimeout = 10 * time.Second
-	s.MaxMessageBytes = 1024 * 1024
-	s.MaxRecipients = 50
-	s.AllowInsecureAuth = true
-
-	s.EnableREQUIRETLS = true
-
-	c, err := tls.LoadX509KeyPair("", "")
-	if err != nil {
-		panic("A")
-	}
-	s.TLSConfig = &tls.Config{
-		Certificates: []tls.Certificate{c},
-	}
-
-	log.Println("Starting server at", s.Addr)
-	if err := s.ListenAndServeTLS(); err != nil {
-		log.Fatal(err)
-	}
 }

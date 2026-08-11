@@ -1,6 +1,10 @@
 generated/
+
 /notifications-api
 /notifications-server
+/mail-sender
+/smtp-proxy
+
 
 .env.local
 /configs/local-observability/data
