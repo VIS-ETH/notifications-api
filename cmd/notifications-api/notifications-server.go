@@ -226,7 +226,7 @@ func main() {
 
 	grpcServer := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(oidcIssuer, oidcClientID, unauthenticatedGrpc, jwtKeyFunc)),
+		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(*oidcIssuer, *oidcClientID, jwtKeyFunc)),
 	)
 
 	var auth *mailer.SMTPAuth

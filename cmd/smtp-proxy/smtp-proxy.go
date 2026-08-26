@@ -33,14 +33,14 @@ func main() {
 	)
 	grpcClientAuthMode := flag.String(
 		"grpc-client-auth",
-		"none",
+		internal.EnvOrDefault("GRPC_CLIENT_AUTH_MODE", "none"),
 		"Authentication mode to be chosen for grpc client of notifications API",
 	)
 
 	// Auth flags
 	smtpServerAuth := flag.String(
 		"smtp-server-auth",
-		"none",
+		internal.EnvOrDefault("SMTP_CLIENT_AUTH_MODE", "none"),
 		"SMTP server authentication enabled",
 	)
 	smtpServerTLS := flag.Bool(
@@ -52,6 +52,11 @@ func main() {
 		"smtp-server-allow-insecure-auth",
 		internal.EnvOrDefault("SIP_AUTH_SMTP_SERVER_ALLOW_INSECURE_AUTH", "false") == "true",
 		"SMTP server allow insecure auth enabled",
+	)
+	smtpServerAddress := flag.String(
+		"smtp-server-address",
+		internal.EnvOrDefault("SMTP_SERVER_ADDRESS", ":2225"),
+		"SMTP server address",
 	)
 	// TLS Configurations
 	tlsCertPath := flag.String(
@@ -74,9 +79,9 @@ func main() {
 		internal.EnvOrDefault("SIP_AUTH_OIDC_CLIENT_SECRET", "notifications-api"),
 		"Client Secret used for Notifications API",
 	)
-	oidcIssuer := flag.String(
+	oidcTokenEndpoint := flag.String(
 		"oidc-issuer",
-		internal.EnvOrDefault("SIP_AUTH_OIDC_ISSUER", "https://keycloak-fake.vis.ethz.ch/realms/VSETH"),
+		internal.EnvOrDefault("SIP_AUTH_OIDC_TOKEN_ENDPOINT", "https://keycloak-fake.vis.ethz.ch/realms/VSETH/protocol/openid-connect/token"),
 		"Issuer URL for OIDC",
 	)
 
@@ -106,7 +111,7 @@ func main() {
 		"Logging Only":             *loggingOnly,
 		"GRPC Authentication mode": *grpcClientAuthMode,
 		"GRPC OIDC Client ID":      *oidcClientID,
-		"GRPC OIDC Issuer":         *oidcIssuer,
+		"OIDC Token Endpoint":      *oidcTokenEndpoint,
 		"SMTP Authentication mode": *smtpServerAuth,
 		"SMTP Server TLS":          *smtpServerTLS,
 		"SMTP Allow Insecure Auth": *smtpServerAllowInsecureAuth,
@@ -166,8 +171,8 @@ func main() {
 	if parsedGrpcAuthMode == smtpproxy.GrpcAuthModeOIDCInject && *oidcClientID == "" || *oidcClientSecret == "" {
 		logrus.Fatalf("OIDC client ID and secret must be provided for OIDC inject mode")
 	}
-	if parsedGrpcAuthMode != smtpproxy.GrpcAuthModeNone && *oidcIssuer == "" {
-		logrus.Fatalf("OIDC issuer must be provided for gRPC client auth")
+	if parsedGrpcAuthMode != smtpproxy.GrpcAuthModeNone && *oidcTokenEndpoint == "" {
+		logrus.Fatalf("OIDC token endpoint must be provided for gRPC client auth")
 	}
 	if parsedGrpcAuthMode == smtpproxy.GrpcAuthModeSMTPPassthrough && parsedSMTPAuthMode == smtpproxy.SMTPAuthModeNone {
 		logrus.Fatalf("SMTP auth mode must be set to 'plain' when gRPC auth mode is 'passthrough'")
@@ -176,7 +181,7 @@ func main() {
 		logrus.Fatalf("SMTP server TLS must be enabled when SMTP auth mode is not 'none'")
 	}
 
-	oidcConfig := smtpproxy.NewOIDCConfig(*oidcIssuer, *oidcClientID, *oidcClientSecret)
+	oidcConfig := smtpproxy.NewOIDCConfig(*oidcTokenEndpoint, *oidcClientID, *oidcClientSecret)
 
 	clientConn, err := grpc.NewClient("localhost:6781",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -194,7 +199,7 @@ func main() {
 		OidcConfig:       oidcConfig,
 	}
 	srv, err := smtpproxy.GetSMTPServer(smtpProxyConfig, client)
-	srv.Addr = ":2225"
+	srv.Addr = *smtpServerAddress
 	srv.Domain = "localhost"
 	if !*smtpServerAllowInsecureAuth {
 		srv.EnableREQUIRETLS = *smtpServerTLS

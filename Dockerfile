@@ -17,11 +17,16 @@ RUN go tool sqlc generate
 
 COPY . .
 
-RUN CGO_ENABLED=0 go build cmd/notifications-api/notifications-server.go
+ENV CGO_ENABLED=0
+RUN go build cmd/mail-sender/mail-sender.go \
+  && go build cmd/notifications-api/notifications-server.go \
+  && go build cmd/smtp-proxy/smtp-proxy.go
 
 FROM gcr.io/distroless/static-debian13:nonroot
 
-COPY --from=builder /app/notifications-server /
+WORKDIR /
+
+COPY --from=builder /app/notifications-server /app/smtp-proxy /app/mail-sender /
 COPY sql/migrations /sql/migrations
 
 ENV MIGRATIONS_DIR=/sql/migrations

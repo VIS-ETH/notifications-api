@@ -2,7 +2,6 @@ package smtpproxy
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/emersion/go-smtp"
@@ -15,8 +14,9 @@ import (
 )
 
 type (
-	GrpcAuthMode string
-	SMTPAuthMode string
+	GrpcAuthMode              string
+	SMTPAuthMode              string
+	SMTPSessionContextAuthKey string
 )
 
 const (
@@ -30,6 +30,8 @@ const (
 	SMTPAuthModePlain SMTPAuthMode = "smtp-auth-plain"
 )
 
+const SMTPSessionContextAuthKeyName SMTPSessionContextAuthKey = "smtp-server-auth-handler-context-key"
+
 type OIDCConfig struct {
 	oidcTokenEndpoint string
 	oidcClientID      string
@@ -37,17 +39,18 @@ type OIDCConfig struct {
 }
 
 type SMTPProxyConfig struct {
-	SMTPAuthMode     SMTPAuthMode
-	SMTPEnsureSender bool
-	GrpcAuthMode     GrpcAuthMode
-	OidcConfig       *OIDCConfig
-	LoggingOnly      bool
-	logger           *logrus.Entry
+	SMTPAuthMode         SMTPAuthMode
+	SMTPEnsureSender     bool
+	GrpcAuthMode         GrpcAuthMode
+	OidcConfig           *OIDCConfig
+	TokenProviderOptions []auth.OidcTokenProviderOption
+	LoggingOnly          bool
+	logger               *logrus.Entry
 }
 
-func NewOIDCConfig(issuerURL, clientID, clientSecret string) *OIDCConfig {
+func NewOIDCConfig(tokenEndpoint, clientID, clientSecret string) *OIDCConfig {
 	return &OIDCConfig{
-		oidcTokenEndpoint: issuerURL,
+		oidcTokenEndpoint: tokenEndpoint,
 		oidcClientID:      clientID,
 		oidcClientSecret:  clientSecret,
 	}
@@ -64,14 +67,11 @@ func GetSMTPServer(config SMTPProxyConfig, client pb.MailServiceClient) (*smtp.S
 			config.OidcConfig.oidcTokenEndpoint,
 			config.OidcConfig.oidcClientID,
 			config.OidcConfig.oidcClientSecret,
+			config.TokenProviderOptions...,
 		)
 		if _, err := oidcTokenProvider.GetAccessToken(); err != nil {
 			return nil, fmt.Errorf("failed to get initial access token: %v", err)
 		}
-	}
-
-	if config.GrpcAuthMode == GrpcAuthModeSMTPPassthrough {
-		return nil, errors.New("SMTP auth passthrough mode is not implemented yet")
 	}
 
 	mailHandler := func(ctx context.Context, mail *mailer.Mail) error {
@@ -120,7 +120,20 @@ func GetSMTPServer(config SMTPProxyConfig, client pb.MailServiceClient) (*smtp.S
 		case GrpcAuthModeNone:
 			break
 		case GrpcAuthModeSMTPPassthrough:
-			return fmt.Errorf("SMTP auth passthrough mode is not implemented yet")
+			val := ctx.Value(SMTPSessionContextAuthKeyName)
+			tp, ok := val.(*auth.OidcTokenProvider)
+			if !ok {
+				config.logger.Errorf("Failed to retrieve OIDC token provider from context for SMTP passthrough auth")
+				return fmt.Errorf("failed to retrieve OIDC token provider from context for SMTP passthrough auth")
+			}
+			token, err := tp.GetAccessToken()
+			if err != nil {
+				config.logger.Errorf("Failed to get access token for gRPC request: %v", err)
+				return fmt.Errorf("failed to get access token for gRPC request: %v", err)
+			}
+			authedCtx = metadata.AppendToOutgoingContext(authedCtx,
+				"Authorization", fmt.Sprintf("Bearer %s", *token))
+			logrus.Infof("Using SMTP passthrough auth mode, added Authorization header with access token to gRPC context")
 		case GrpcAuthModeOIDCInject:
 			accessToken, err := oidcTokenProvider.GetAccessToken()
 			if err != nil {
@@ -132,6 +145,11 @@ func GetSMTPServer(config SMTPProxyConfig, client pb.MailServiceClient) (*smtp.S
 		default:
 			config.logger.Errorf("Unknown gRPC auth mode: %s", config.GrpcAuthMode)
 			return fmt.Errorf("unknown gRPC auth mode: %s", config.GrpcAuthMode)
+		}
+
+		if config.LoggingOnly {
+			config.logger.Infof("Sending mail with %v", pbMail)
+			return nil
 		}
 
 		config.logger.Debugf("Sending mail via gRPC with auth mode %s", config.GrpcAuthMode)
@@ -165,6 +183,26 @@ func GetSMTPServer(config SMTPProxyConfig, client pb.MailServiceClient) (*smtp.S
 		return nil
 	}
 
-	srv := smtp.NewServer(smtpserver.NewBackend(mailHandler))
+	authHandler := func(ctx context.Context, username, password string) (context.Context, error) {
+		tp := auth.NewOidcTokenProvider(
+			config.OidcConfig.oidcTokenEndpoint,
+			username,
+			password,
+			config.TokenProviderOptions...,
+		)
+
+		if _, err := tp.GetAccessToken(); err != nil {
+			return nil, fmt.Errorf("failed to get initial access token: %v", err)
+		}
+
+		return context.WithValue(ctx, SMTPSessionContextAuthKeyName, tp), nil
+	}
+
+	var options []smtpserver.BackendOption
+	if config.SMTPAuthMode == SMTPAuthModePlain {
+		options = append(options, smtpserver.WithAuthHandler(authHandler))
+	}
+
+	srv := smtp.NewServer(smtpserver.NewBackend(mailHandler, options...))
 	return srv, nil
 }

@@ -1,26 +1,63 @@
 services:
+  auth-mock:
+    build:
+      dockerfile: ./configs/auth-mock.Dockerfile
+    ports: [8081:8081]
+    environment:
+      LISTEN_ADDR: "auth-mock:8081"
+
+  stmp-debug:
+    build: .
+    ports: [2225:2225]
+    command: "/smtp-proxy"
+    environment:
+      NOTIFICATIONS_LOGGING_ONLY: true
+      LOG_LEVEL: trace
+
   notifications-api:
     build: .
-    ports:
-      - 6781:6781
+    ports: [6781:6781]
     depends_on:
       postgres:
         condition: service_healthy
+    command: "/notifications-server"
     env_file:
       - required: false
         path: .env.local
     environment:
-      NOTIFICATIONS_UNAUTHENTICATED: true
-      #NOTIFICATIONS_LOGGING_ONLY: false
-      #SMTP_MAIL_URL: "smtp://xxx.xxx.xxx.xxx:2225"
+      NOTIFICATIONS_LOGGING_ONLY: false
+      SMTP_MAIL_URL: "smtp://smtp-debug:2225"
+
       LOG_LEVEL: trace
-      SIP_AUTH_OIDC_CLIENT_ID: mail-api
-      SIP_AUTH_OIDC_ISSUER: https://keycloak-fake.vis.ethz.ch/realms/VSETH
-      SIP_AUTH_OIDC_JWKS_URL: https://keycloak-fake.vis.ethz.ch/realms/VSETH/protocol/openid-connect/certs
+
+      NOTIFICATIONS_UNAUTHENTICATED: false
+      #SIP_AUTH_OIDC_CLIENT_ID: mail-api
+      #SIP_AUTH_OIDC_ISSUER: https://keycloak-fake.vis.ethz.ch/realms/VSETH
+      #SIP_AUTH_OIDC_JWKS_URL: https://keycloak-fake.vis.ethz.ch/realms/VSETH/protocol/openid-connect/certs
+      SIP_AUTH_OIDC_CLIENT_ID: "test-client-id"
+      SIP_AUTH_OIDC_ISSUER: "http://auth-mock:8081"
+      SIP_AUTH_OIDC_JWKS_URL: "http://auth-mock:8081/jwks"
       POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable
 
+  smtp-proxy:
+    build: .
+    ports: [2226:2226]
+    command: "/smtp-proxy"
+    env_file:
+      - required: false
+        path: .env.local
+    environment:
+      LOG_LEVEL: trace
+      NOTIFICATIONS_LOGGING_ONLY: false
+      #NOTIFICATIONS_UNAUTHENTICATED: true
+      GRPC_CLIENT_AUTH_MODE: passthrough
+      SMTP_CLIENT_AUTH_MODE: plain
+      SMTP_SERVER_ADDRESS: ":2226"
+      SIP_AUTH_OIDC_TOKEN_ENDPOINT: "http://auth-mock:8081/token"
+      SIP_AUTH_SMTP_SERVER_ALLOW_INSECURE_AUTH: true
+
   postgres:
-    image: postgres:18
+    image: postgres:18-trixie
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
