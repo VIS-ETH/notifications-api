@@ -57,12 +57,12 @@ func main() {
 	)
 	smtpServerTLS := flag.Bool(
 		"smtp-server-tls",
-		internal.EnvOrDefault("SIP_AUTH_SMTP_SERVER_TLS", "false") != "false",
+		internal.EnvOrDefault("SMTP_SERVER_TLS", "false") != "false",
 		"SMTP server TLS enabled",
 	)
 	smtpServerAllowInsecureAuth := flag.Bool(
 		"smtp-server-allow-insecure-auth",
-		internal.EnvOrDefault("SIP_AUTH_SMTP_SERVER_ALLOW_INSECURE_AUTH", "false") == "true",
+		internal.EnvOrDefault("SMTP_SERVER_ALLOW_INSECURE_AUTH", "false") == "true",
 		"SMTP server allow insecure auth enabled",
 	)
 	smtpServerAddress := flag.String(
