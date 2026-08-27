@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -35,6 +37,16 @@ func main() {
 		"grpc-client-auth",
 		internal.EnvOrDefault("GRPC_CLIENT_AUTH_MODE", "none"),
 		"Authentication mode to be chosen for grpc client of notifications API",
+	)
+	grpcServerAddress := flag.String(
+		"grpc-server-address",
+		internal.EnvOrDefault("GRPC_SERVER_ADDRESS", "localhost:6781"),
+		"Address of the gRPC server to connect to",
+	)
+	grpcServerInsecure := flag.Bool(
+		"grpc-server-insecure",
+		internal.EnvOrDefault("GRPC_SERVER_INSECURE", "true") == "true",
+		"Use insecure connection to gRPC server",
 	)
 
 	// Auth flags
@@ -183,8 +195,16 @@ func main() {
 
 	oidcConfig := smtpproxy.NewOIDCConfig(*oidcTokenEndpoint, *oidcClientID, *oidcClientSecret)
 
-	clientConn, err := grpc.NewClient("localhost:6781",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	var creds credentials.TransportCredentials
+	if *grpcServerInsecure {
+		creds = insecure.NewCredentials()
+	} else {
+		pool, _ := x509.SystemCertPool()
+		creds = credentials.NewClientTLSFromCert(pool, "")
+	}
+
+	clientConn, err := grpc.NewClient(*grpcServerAddress,
+		grpc.WithTransportCredentials(creds),
 	)
 	if err != nil {
 		logrus.Fatalf("failed to connect to gRPC server: %v", err)
@@ -204,7 +224,7 @@ func main() {
 	if !*smtpServerAllowInsecureAuth {
 		srv.EnableREQUIRETLS = *smtpServerTLS
 	}
-	tlsConfig := &tls.Config{}
+	var tlsConfig *tls.Config
 
 	if *smtpServerTLS {
 		tlsConfig, err = loadTLSConfig(*tlsCertPath, *tlsKeyPath)

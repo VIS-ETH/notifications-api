@@ -1,19 +1,30 @@
 services:
+  # Fake auth server:
+  # - hands out a public key
+  # - hands out basic versions of bearer OIDC tokens based on basic authorization header
+  # - supports only static username/password
   auth-mock:
     build:
       dockerfile: ./configs/auth-mock.Dockerfile
     ports: [8081:8081]
     environment:
       LISTEN_ADDR: "auth-mock:8081"
+      ISSUER_URL: "http://auth-mock:8081"
 
-  stmp-debug:
+  # SMTP Sink for all mails sent by notifications API.
+  # All mails are logged and not further processed.
+  smtp-debug:
     build: .
     ports: [2225:2225]
     command: "/smtp-proxy"
     environment:
       NOTIFICATIONS_LOGGING_ONLY: true
       LOG_LEVEL: trace
+      SIP_AUTH_SMTP_SERVER_TLS: false
+      SIP_AUTH_SMTP_SERVER_ALLOW_INSECURE_AUTH: true
 
+  # Notifications API that exposes all features of gRPC,
+  # sending mails to the above configured SMTP sink
   notifications-api:
     build: .
     ports: [6781:6781]
@@ -39,6 +50,8 @@ services:
       SIP_AUTH_OIDC_JWKS_URL: "http://auth-mock:8081/jwks"
       POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable
 
+  # An SMTP Proxy that takes in AUTH PLAIN in username-password
+  # then forwards all requests to the notifications-api above.
   smtp-proxy:
     build: .
     ports: [2226:2226]
@@ -49,10 +62,15 @@ services:
     environment:
       LOG_LEVEL: trace
       NOTIFICATIONS_LOGGING_ONLY: false
-      #NOTIFICATIONS_UNAUTHENTICATED: true
+
       GRPC_CLIENT_AUTH_MODE: passthrough
+      GRPC_SERVER_INSECURE: true
+      GRPC_SERVER_ADDRESS: notifications-api:6781
+
       SMTP_CLIENT_AUTH_MODE: plain
       SMTP_SERVER_ADDRESS: ":2226"
+
+      #NOTIFICATIONS_UNAUTHENTICATED: true
       SIP_AUTH_OIDC_TOKEN_ENDPOINT: "http://auth-mock:8081/token"
       SIP_AUTH_SMTP_SERVER_ALLOW_INSECURE_AUTH: true
 

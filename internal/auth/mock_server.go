@@ -34,24 +34,24 @@ type AuthMockServerHandle struct {
 	handler    http.Handler
 	privateKey *rsa.PrivateKey
 	logger     *logrus.Entry
-	url        string
+	issuerURL  string
 }
 
 func (h *AuthMockServerHandle) URL() string {
-	return h.url
+	return h.issuerURL
 }
 
 func StartHttpTestServer(mockServerHandler *AuthMockServerHandle) (*httptest.Server, error) {
-	if url := mockServerHandler.url; url != "" {
+	if url := mockServerHandler.issuerURL; url != "" {
 		return nil, fmt.Errorf("mock server already started at %s", url)
 	}
 	srv := httptest.NewServer(mockServerHandler.handler)
-	mockServerHandler.url = srv.URL
+	mockServerHandler.issuerURL = srv.URL
 	return srv, nil
 }
 
-func StartHttpMockServer(addr string, mockServerHandler *AuthMockServerHandle) (ListenFunc, error) {
-	if url := mockServerHandler.url; url != "" {
+func StartHttpMockServer(addr, issuerURL string, mockServerHandler *AuthMockServerHandle) (ListenFunc, error) {
+	if url := mockServerHandler.issuerURL; url != "" {
 		return nil, fmt.Errorf("mock server already started at %s", url)
 	}
 	srv := &http.Server{
@@ -63,7 +63,7 @@ func StartHttpMockServer(addr string, mockServerHandler *AuthMockServerHandle) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on %s: %v", addr, err)
 	}
-	mockServerHandler.url = fmt.Sprintf("http://%s", l.Addr().String())
+	mockServerHandler.issuerURL = issuerURL
 
 	return func() error {
 		return srv.Serve(l)
@@ -140,7 +140,7 @@ func NewAuthMockServerHandle(username, password string) (*AuthMockServerHandle, 
 			}
 			token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 				"sub": AuthMockUserSub,
-				"iss": handle.url,
+				"iss": handle.issuerURL,
 				"aud": AuthMockClientID,
 				"resource_access": map[string]map[string][]string{
 					AuthMockClientID: {

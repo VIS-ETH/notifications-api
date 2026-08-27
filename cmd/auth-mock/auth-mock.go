@@ -15,12 +15,20 @@ func main() {
 		internal.EnvOrDefault("LISTEN_ADDR", ":8081"),
 		"listen address",
 	)
+	issuerURLFlag := flag.String(
+		"issuer-url",
+		internal.EnvOrDefault("ISSUER_URL", "localhost:8081"),
+		"issuer URL for the mock auth server",
+	)
 	handle, err := auth.NewAuthMockServerHandle(auth.AuthMockUserUsername, auth.AuthMockUserPassword)
 	if err != nil {
 		log.Fatalf("Failed to start mock auth server: %v", err)
 	}
 
-	srvListen, err := auth.StartHttpMockServer(*addrFlag, handle)
+	srvListen, err := auth.StartHttpMockServer(
+		*addrFlag,
+		*issuerURLFlag,
+		handle)
 	if err != nil {
 		log.Fatalf("Failed to start mock auth server: %v", err)
 	}
