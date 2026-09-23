@@ -1,26 +1,57 @@
 services:
+  # SMTP Sink for all mails sent by notifications API.
+  # All mails are logged and not further processed.
+  smtp-debug:
+    build: .
+    ports: [2225:2225]
+    command: "/smtp-proxy"
+    environment:
+      NOTIFICATIONS_LOGGING_ONLY: true
+      LOG_LEVEL: trace
+      SMTP_SERVER_TLS: false
+
+  # Notifications API that exposes all features of gRPC,
+  # sending mails to the above configured SMTP sink
   notifications-api:
     build: .
-    ports:
-      - 6781:6781
+    ports: [6781:6781]
     depends_on:
       postgres:
         condition: service_healthy
+    command: "/notifications-server"
     env_file:
       - required: false
         path: .env.local
     environment:
+      NOTIFICATIONS_LOGGING_ONLY: false
       NOTIFICATIONS_UNAUTHENTICATED: true
-      #NOTIFICATIONS_LOGGING_ONLY: false
-      #SMTP_MAIL_URL: "smtp://xxx.xxx.xxx.xxx:2225"
+      SMTP_MAIL_URL: "smtp://smtp-debug:2225"
       LOG_LEVEL: trace
-      SIP_AUTH_OIDC_CLIENT_ID: mail-api
-      SIP_AUTH_OIDC_ISSUER: https://keycloak-fake.vis.ethz.ch/realms/VSETH
-      SIP_AUTH_OIDC_JWKS_URL: https://keycloak-fake.vis.ethz.ch/realms/VSETH/protocol/openid-connect/certs
       POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable
 
+  # An SMTP Proxy that takes in AUTH PLAIN in username-password
+  # then forwards all requests to the notifications-api above.
+  smtp-proxy:
+    build: .
+    ports: [2226:2226]
+    command: "/smtp-proxy"
+    env_file:
+      - required: false
+        path: .env.local
+    environment:
+      LOG_LEVEL: trace
+      NOTIFICATIONS_LOGGING_ONLY: false
+      NOTIFICATIONS_UNAUTHENTICATED: true
+
+      GRPC_CLIENT_AUTH_MODE: none
+      GRPC_SERVER_INSECURE: true
+      GRPC_SERVER_ADDRESS: notifications-api:6781
+
+      SMTP_CLIENT_AUTH_MODE: none
+      SMTP_SERVER_ADDRESS: ":2226"
+
   postgres:
-    image: postgres:18
+    image: postgres:18-trixie
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres

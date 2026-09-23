@@ -8,7 +8,7 @@ import (
 )
 
 type CustomClaims struct {
-	ClientID       *string                        `json:"-"`
+	ClientID       string                         `json:"-"`
 	ResourceAccess map[string]map[string][]string `json:"resource_access,omitempty"`
 	jwt.RegisteredClaims
 }
@@ -19,15 +19,15 @@ func (c *CustomClaims) getRoles() *[]string {
 		logrus.Warnf("No claim is configured... handling as completely unauthenticated...")
 		return nil
 	}
-	client, ok := c.ResourceAccess[*c.ClientID]
+	client, ok := c.ResourceAccess[c.ClientID]
 	if !ok {
-		logrus.Warnf("No resource_access entry for client %s was found...", *c.ClientID)
+		logrus.Warnf("No resource_access entry for client %s was found...", c.ClientID)
 		return nil
 	}
 
 	roles, ok := client["roles"]
 	if !ok {
-		logrus.Warnf("No roles were found in resource_access for client %s..", *c.ClientID)
+		logrus.Warnf("No roles were found in resource_access for client %s..", c.ClientID)
 		return nil
 	}
 	return &roles

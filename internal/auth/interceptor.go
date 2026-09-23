@@ -18,7 +18,7 @@ type AuthParsedTokenContext string
 
 const authParsedTokenContextKey AuthParsedTokenContext = "auth_token_claims_ctx"
 
-func parseIncomingToken(ctx context.Context, oidcIssuer, oidcClientID *string, k jwt.Keyfunc) (*CustomClaims, error) {
+func parseIncomingToken(ctx context.Context, oidcIssuer, oidcClientID string, k jwt.Keyfunc) (*CustomClaims, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return nil, errors.New("GRPC metadata could not be extracted from incoming context")
@@ -38,8 +38,8 @@ func parseIncomingToken(ctx context.Context, oidcIssuer, oidcClientID *string, k
 		authToken,
 		&claims,
 		k,
-		jwt.WithIssuer(*oidcIssuer),
-		jwt.WithAudience(*oidcClientID),
+		jwt.WithIssuer(oidcIssuer),
+		jwt.WithAudience(oidcClientID),
 		jwt.WithIssuedAt(),
 		jwt.WithExpirationRequired(),
 	)
@@ -53,7 +53,7 @@ func parseIncomingToken(ctx context.Context, oidcIssuer, oidcClientID *string, k
 	return &claims, nil
 }
 
-func GetGrpcAuthInterceptor(oidcIssuer, oidcClientID *string, unauthenticated *bool, k jwt.Keyfunc) grpc.UnaryServerInterceptor {
+func GetGrpcAuthInterceptor(oidcIssuer, oidcClientID string, k jwt.Keyfunc) grpc.UnaryServerInterceptor {
 	logger := logrus.WithFields(logrus.Fields{
 		"component": "grpc-auth-interceptor",
 	})
@@ -63,7 +63,7 @@ func GetGrpcAuthInterceptor(oidcIssuer, oidcClientID *string, unauthenticated *b
 
 		enrichedCtx := ctx
 		if err != nil {
-			logger.Tracef("Request unauthenticated, but request might succeed without auth")
+			logger.Tracef("Request unauthenticated, but request might succeed without auth. Cause: %v", err)
 		} else {
 			enrichedCtx = context.WithValue(ctx, authParsedTokenContextKey, claims)
 		}

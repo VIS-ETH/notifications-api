@@ -8,15 +8,21 @@ import (
 	"net/mail"
 	"strings"
 
+	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 	"github.com/sirupsen/logrus"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
 )
 
+type authHandler func(ctx context.Context, username, password string) (context.Context, error)
+
 type messageHandler func(ctx context.Context, mail *mailer.Mail) error
 
 type Backend struct {
 	handleMessage messageHandler
+	handleAuth    authHandler
+
+	requireAuth bool
 }
 
 /*
@@ -30,8 +36,24 @@ Subject: Test
 
 Hey <3
 */
-func NewBackend(handleMessage messageHandler) *Backend {
-	return &Backend{handleMessage: handleMessage}
+func NewBackend(
+	handleMessage messageHandler,
+	options ...BackendOption,
+) *Backend {
+	b := &Backend{handleMessage: handleMessage}
+	for _, o := range options {
+		o(b)
+	}
+	return b
+}
+
+type BackendOption func(*Backend)
+
+func WithAuthHandler(handleAuth authHandler) BackendOption {
+	return func(b *Backend) {
+		b.requireAuth = true
+		b.handleAuth = handleAuth
+	}
 }
 
 func (bkd *Backend) NewSession(c *smtp.Conn) (smtp.Session, error) {
@@ -39,52 +61,62 @@ func (bkd *Backend) NewSession(c *smtp.Conn) (smtp.Session, error) {
 		"component": "smtpserver",
 	})
 
-	return &session{
+	s := &session{
 		backend: bkd,
 		logger:  logger,
-	}, nil
+	}
+	s.Reset()
+	return s, nil
 }
 
 type session struct {
-	// auth    bool
 	backend *Backend
 	logger  *logrus.Entry
 
 	from       string
 	recipients []string
 	data       []byte
+
+	ctx             context.Context
+	isAuthenticated bool
 }
 
-/*
 func (s *session) AuthMechanisms() []string {
-	return []string{sasl.Plain, sasl.OAuthBearer}
+	// Technically, we could support OAuth... it's ugly and not well supported. so no.
+	return []string{sasl.Plain}
 }
 
 func (s *session) Auth(mech string) (sasl.Server, error) {
 	switch mech {
 	case sasl.Plain:
 		return sasl.NewPlainServer(func(identity, username, password string) error {
-			if username != "username" || password != "password" {
-				return errors.New("invalid username or password")
+			authedCtx, err := s.backend.handleAuth(s.ctx, username, password)
+			if err != nil {
+				return fmt.Errorf("authentication failed: %v", err)
 			}
-			s.auth = true
+			s.ctx = authedCtx
+			s.isAuthenticated = true
 			return nil
 		}), nil
-	case sasl.OAuthBearer:
+		//case sasl.OAuthBearer:
 		//return sasl.NewOAuthBearerServer(func(opts sasl.OAuthBearerOptions) *sasl.OAuthBearerError {
 		//	// Verify signature, load & check roles
 		//	opts.Token
 		//}), nil
 	}
-	return nil, fmt.Errorf("tedstg")
+	return nil, fmt.Errorf("no mechanism %s supported", mech)
 }
-
-func (s *session) Logout() error {
-	return nil
-}
-*/
 
 func (s *session) AuthPlain(username, password string) error {
+	if !s.backend.requireAuth {
+		return fmt.Errorf("authentication not required, but client attempted to authenticate")
+	}
+	authedCtx, err := s.backend.handleAuth(s.ctx, username, password)
+	if err != nil {
+		return fmt.Errorf("authentication failed: %v", err)
+	}
+	s.ctx = authedCtx
+	s.isAuthenticated = true
 	return nil
 }
 
@@ -96,34 +128,30 @@ func (s *session) Reset() {
 	s.from = ""
 	s.recipients = nil
 	s.data = nil
+	s.ctx = context.Background()
+	s.isAuthenticated = false
 }
 
 func (s *session) Mail(from string, opts *smtp.MailOptions) error {
-	/*
-		if !s.auth {
-			return smtp.ErrAuthRequired
-		}
-	*/
+	if s.backend.requireAuth && !s.isAuthenticated {
+		return smtp.ErrAuthRequired
+	}
 	s.from = from
 	return nil
 }
 
 func (s *session) Rcpt(to string, opts *smtp.RcptOptions) error {
-	/*
-		if !s.auth {
-			return smtp.ErrAuthRequired
-		}
-	*/
+	if s.backend.requireAuth && !s.isAuthenticated {
+		return smtp.ErrAuthRequired
+	}
 	s.recipients = append(s.recipients, to)
 	return nil
 }
 
 func (s *session) Data(r io.Reader) error {
-	/*
-		if !s.auth {
-			return smtp.ErrAuthRequired
-		}
-	*/
+	if s.backend.requireAuth && !s.isAuthenticated {
+		return smtp.ErrAuthRequired
+	}
 	message, err := mail.ReadMessage(r)
 	if err != nil {
 		return fmt.Errorf("reading message from %s to [%s] failed: %v", s.from, strings.Join(s.recipients, ", "), err)
@@ -216,7 +244,7 @@ ccRecipientsOk:
 	}
 	parsedMail.Bcc = bcc
 
-	err = s.backend.handleMessage(context.TODO(), parsedMail)
+	err = s.backend.handleMessage(s.ctx, parsedMail)
 	if err != nil {
 		return fmt.Errorf("handling message from %s to [%s] failed: %v", s.from, strings.Join(s.recipients, ", "), err)
 	}

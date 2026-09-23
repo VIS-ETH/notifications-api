@@ -1,0 +1,35 @@
+services:
+  # Fake auth server:
+  # - hands out a public key
+  # - hands out basic versions of bearer OIDC tokens based on basic authorization header
+  # - supports only static username/password
+  auth-mock:
+    build:
+      dockerfile: ./configs/auth-mock.Dockerfile
+    ports: [8081:8081]
+    environment:
+      LISTEN_ADDR: "auth-mock:8081"
+      ISSUER_URL: "http://auth-mock:8081"
+
+  smtp-debug:
+    environment:
+      SMTP_CLIENT_AUTH_MODE: none
+      SMTP_SERVER_ALLOW_INSECURE_AUTH: true
+
+  notifications-api:
+    environment:
+      NOTIFICATIONS_UNAUTHENTICATED: false
+      #SIP_AUTH_OIDC_CLIENT_ID: mail-api
+      #SIP_AUTH_OIDC_ISSUER: https://keycloak-fake.vis.ethz.ch/realms/VSETH
+      #SIP_AUTH_OIDC_JWKS_URL: https://keycloak-fake.vis.ethz.ch/realms/VSETH/protocol/openid-connect/certs
+      SIP_AUTH_OIDC_CLIENT_ID: "test-client-id"
+      SIP_AUTH_OIDC_ISSUER: "http://auth-mock:8081"
+      SIP_AUTH_OIDC_JWKS_URL: "http://auth-mock:8081/jwks"
+
+  smtp-proxy:
+    environment:
+      NOTIFICATIONS_UNAUTHENTICATED: false
+      GRPC_CLIENT_AUTH_MODE: passthrough
+      SMTP_CLIENT_AUTH_MODE: plain
+      SIP_AUTH_OIDC_TOKEN_ENDPOINT: "http://auth-mock:8081/token"
+      SMTP_SERVER_ALLOW_INSECURE_AUTH: true

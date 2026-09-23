@@ -6,19 +6,24 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"log"
 	"net"
+	"net/http"
 	"net/mail"
 	"net/smtp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/MicahParks/keyfunc/v3"
 	smtp_emersion "github.com/emersion/go-smtp"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	mockery_sql "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/mockery/generated/sql"
 	mockery_mailer "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/mockery/pkg/mailer"
 	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/pb/sip/notifications"
+	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/grpcservers"
 	smtpproxy "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/smtp-proxy"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
@@ -29,7 +34,28 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
-func TestTLS(t *testing.T) {
+const (
+	TestClientID     = "test-client-id"
+	TestClientSecret = "test-client-secret"
+	TestClientScope  = "test-c://lient-scope"
+	TestExpiresIn    = 1 * time.Hour
+)
+
+type RoundTripFunc func(req *http.Request) (*http.Response, error)
+
+func (f RoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestPassthroughAuth(t *testing.T) {
+	logrus.SetLevel(logrus.TraceLevel)
+	authServer, err := GetAuthServer("test", "test")
+	if err != nil {
+		t.Fatalf("Failed to start auth server: %v", err)
+	}
+	log.Printf("Auth server started at %s", authServer.URL)
+	defer authServer.Close()
+
 	querier := mockery_sql.NewMockQuerier(t)
 	mockMailer := mockery_mailer.NewMockMailSender(t)
 
@@ -52,11 +78,20 @@ func TestTLS(t *testing.T) {
 	}
 	mock.InOrder(calls...)
 
-	grpcServer := grpc.NewServer()
+	k, err := keyfunc.NewDefaultCtx(context.Background(), []string{
+		authServer.URL + TestAuthServerJWKSPath,
+	})
+	if err != nil {
+		logrus.Fatalf("Failed to create a keyfunc.Keyfunc from the server's URL. Error: %v", err)
+	}
+
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(authServer.URL, TestClientID, k.Keyfunc)),
+	)
 
 	mailGrpcServer := grpcservers.NewMailServer(
 		false,
-		true,
+		false,
 		querier,
 		mockMailer,
 	)
@@ -110,12 +145,13 @@ func TestTLS(t *testing.T) {
 	var srv *smtp_emersion.Server
 	eg.Go(func() error {
 		client := pb.NewMailServiceClient(clientConn)
+
 		smtpProxyConfig := smtpproxy.SMTPProxyConfig{
-			SMTPAuthMode:     smtpproxy.SMTPAuthModeNone,
+			SMTPAuthMode:     smtpproxy.SMTPAuthModePlain,
 			SMTPEnsureSender: false,
-			GrpcAuthMode:     smtpproxy.GrpcAuthModeNone,
+			GrpcAuthMode:     smtpproxy.GrpcAuthModeSMTPPassthrough,
 			LoggingOnly:      false,
-			OidcConfig:       &smtpproxy.OIDCConfig{},
+			OidcConfig:       smtpproxy.NewOIDCConfig(authServer.URL+TestAuthServerTokenPath, TestClientID, TestClientSecret),
 		}
 		srv, err = smtpproxy.GetSMTPServer(smtpProxyConfig, client)
 		srv.EnableREQUIRETLS = true
@@ -174,9 +210,14 @@ func TestTLS(t *testing.T) {
 		}
 		t.Logf("Sending HELLO")
 
-		err = smtpClient.Hello("localhost")
+		err = smtpClient.Hello("test")
 		if err != nil {
 			return fmt.Errorf("failed to send HELO: %v", err)
+		}
+
+		err = smtpClient.Auth(smtp.PlainAuth("", "test", "test", "test"))
+		if err != nil {
+			return fmt.Errorf("failed to authenticate: %v", err)
 		}
 
 		err = smtpClient.Mail("test@local.local")
