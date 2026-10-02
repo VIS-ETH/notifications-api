@@ -4,6 +4,8 @@ generated/
 /notifications-server
 /mail-sender
 /smtp-proxy
+/bundled
+/auth-mock
 
 
 .env.local

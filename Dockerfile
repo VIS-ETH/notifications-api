@@ -18,7 +18,7 @@ RUN go tool sqlc generate
 COPY . .
 
 ENV CGO_ENABLED=0
-RUN go build cmd/bundled.go
+RUN go build cmd/bundled/bundled.go
 
 FROM gcr.io/distroless/static-debian13:nonroot
 
