@@ -107,12 +107,12 @@ func chain(run CobraRunE, mws ...Middleware) CobraRunE {
 func withStartupLog(rootConfig *config.CommonConfig, subConfig any) Middleware {
 	return func(next CobraRunE) CobraRunE {
 		return func(cmd *cobra.Command, args []string) error {
-			fields, err := config.ConfigFields(subConfig, rootConfig.LogStartupOptions)
+			fields, err := config.ConfigFields(rootConfig.LogStartupOptions, *cmd.Flags(), subConfig)
 			if err != nil {
 				return err
 			}
 			if fields != nil {
-				logrus.WithFields(config.Flatten(fields)).
+				logrus.WithFields(fields).
 					Infof("starting %s", cmd.Name())
 			}
 			return next(cmd, args)

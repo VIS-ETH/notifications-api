@@ -66,7 +66,7 @@ docker compose up --build
 ## To run the observability stack, simply run the following command.
 ## This will start the container as before, but also start multiple services that allow you to setup everything locally.
 ## Most importantly, Grafana is now available on localhost:3000
-docker compose -f configs/local-observability/compose.observability.yaml up --build
+docker compose -f compose.yaml -f configs/local-observability/compose.observability.yaml up --build
 
 
 # Build locally
@@ -79,11 +79,11 @@ make
 ## Useful command: load .env.local file if exists
 set -a && source .env.local && set +a
 ## Run server - by default only logs incoming messages - "testing first" mentality
-go run cmd/notifications-api/notifications-server.go
+go run cmd/bundled/bundled.go grpc-api
 ## Run server with actually sending messages, but without grpc authentication.
 ## Handle any request without checks.
 ## additionally, run with highest log level
-go run cmd/notifications-api/notifications-server.go -logging-only=false -grpc-unauthenticated -log-level trace
+go run cmd/bundled/bundled.go grpc-api --logging-only=false --grpc-unauthenticated --log-level trace
 ```
 
 ## Observability  showcase infrastructure

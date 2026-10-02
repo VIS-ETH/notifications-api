@@ -3,10 +3,9 @@ package config
 import (
 	"fmt"
 	"reflect"
-	"strconv"
-)
 
-// THIS FILE IS VIBECODED, only file because why would I touch reflection in Go... I just want print
+	"github.com/spf13/pflag"
+)
 
 const (
 	StartupLogAll                = "all"
@@ -14,16 +13,7 @@ const (
 	StartupLogNone               = "none"
 )
 
-var stringerType = reflect.TypeOf((*fmt.Stringer)(nil)).Elem()
-
-// ConfigFields converts a config struct (or pointer to one) into a nested map
-// suitable for structured logging.
-//
-// mode:
-//   - "all":                 include everything, including confidential fields
-//   - "redact-confidential": omit fields tagged `confidential:"true"`
-//   - "none":                return a nil map
-func ConfigFields(cfg any, mode string) (map[string]any, error) {
+func ConfigFields(mode string, fs pflag.FlagSet, cfg any) (map[string]any, error) {
 	switch mode {
 	case StartupLogNone:
 		return nil, nil
@@ -33,106 +23,45 @@ func ConfigFields(cfg any, mode string) (map[string]any, error) {
 			mode, StartupLogAll, StartupLogRedactConfidential, StartupLogNone)
 	}
 
-	v := reflect.ValueOf(cfg)
-	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
-		if v.IsNil() {
-			return map[string]any{}, nil
+	confidential := map[uintptr]bool{}
+	if mode == StartupLogRedactConfidential {
+		collectConfidential(reflect.ValueOf(cfg).Elem(), confidential)
+	}
+
+	flagToValue := make(map[string]any)
+	fs.VisitAll(func(f *pflag.Flag) {
+		if confidential[destAddr(f.Value)] {
+			flagToValue[f.Name] = "redacted"
+			return
 		}
-		v = v.Elem()
-	}
-	if v.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("ConfigFields expects a struct or pointer to struct, got %s", v.Kind())
-	}
-
-	c := &collector{
-		rootPkg: v.Type().PkgPath(),
-		omit:    mode == StartupLogRedactConfidential,
-		seen:    map[uintptr]bool{},
-	}
-	return c.structFields(v), nil
+		flagToValue[f.Name] = f.Value.String()
+	})
+	return flagToValue, nil
 }
 
-type collector struct {
-	rootPkg string
-	omit    bool
-	seen    map[uintptr]bool // pointer cycle protection
-}
-
-func isConfidential(f reflect.StructField) bool {
-	b, err := strconv.ParseBool(f.Tag.Get("confidential"))
-	return err == nil && b
-}
-
-func (c *collector) structFields(v reflect.Value) map[string]any {
+func collectConfidential(v reflect.Value, out map[uintptr]bool) {
 	t := v.Type()
-	out := make(map[string]any, t.NumField())
 	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if !f.IsExported() {
-			continue
-		}
-		if c.omit && isConfidential(f) {
-			continue
-		}
-		out[f.Name] = c.value(v.Field(i))
-	}
-	return out
-}
+		fv := v.Field(i)
+		ft := t.Field(i)
 
-func (c *collector) value(v reflect.Value) any {
-	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
-		if v.IsNil() {
-			return nil
-		}
-		if v.Kind() == reflect.Pointer {
-			ptr := v.Pointer()
-			if c.seen[ptr] {
-				return "<cycle>"
+		switch {
+		case fv.Kind() == reflect.Struct:
+			collectConfidential(fv, out)
+		case fv.Kind() == reflect.Ptr && ft.Type.Elem().Kind() == reflect.Struct:
+			if !fv.IsNil() {
+				collectConfidential(fv.Elem(), out)
 			}
-			c.seen[ptr] = true
-			defer delete(c.seen, ptr)
+		case ft.Tag.Get("confidential") == "true":
+			out[fv.UnsafeAddr()] = true
 		}
-		v = v.Elem()
 	}
-
-	// Self-describing types (time.Duration, time.Time, ...) become strings so
-	// JSON output stays readable (a Duration would otherwise be raw nanoseconds).
-	if v.Type().Implements(stringerType) && v.CanInterface() {
-		return fmt.Sprint(v.Interface())
-	}
-
-	if v.Kind() == reflect.Struct {
-		// Foreign structs (e.g. tls.Config) can hold secrets, funcs and mutexes.
-		if v.Type().PkgPath() != c.rootPkg {
-			return "<" + v.Type().String() + ">"
-		}
-		return c.structFields(v)
-	}
-
-	if v.CanInterface() {
-		return v.Interface()
-	}
-	return nil
 }
 
-// Flatten turns a nested map into a single-level map with dotted keys, e.g.
-// {"A": {"B": 1}} becomes {"A.B": 1}.
-func Flatten(m map[string]any) map[string]any {
-	out := make(map[string]any, len(m))
-	flattenInto(out, "", m)
-	return out
-}
-
-func flattenInto(out map[string]any, prefix string, m map[string]any) {
-	for k, v := range m {
-		key := k
-		if prefix != "" {
-			key = prefix + "." + k
-		}
-		if sub, ok := v.(map[string]any); ok {
-			flattenInto(out, key, sub)
-			continue
-		}
-		out[key] = v
+func destAddr(v pflag.Value) uintptr {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Ptr {
+		return 0
 	}
+	return rv.Pointer()
 }
