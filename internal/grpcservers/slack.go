@@ -15,7 +15,7 @@ func (s *SlackServer) SendSlackMessage(ctx context.Context, req *pb.SlackRequest
 		return nil, status.Errorf(codes.Unauthenticated, "No metadata could be extracted from request")
 	}
 
-	if *s.loggingOnly {
+	if s.loggingOnly {
 		s.logger.Infof("Sending message %+v", req)
 		return &pb.SlackResponse{}, nil
 	}
