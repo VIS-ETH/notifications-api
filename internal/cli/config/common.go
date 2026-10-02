@@ -3,11 +3,11 @@ package config
 import (
 	"crypto/tls"
 	"errors"
-	"flag"
 	"fmt"
 	"strings"
 
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/pflag"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal"
 	smtpproxy "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/smtp-proxy"
 )
@@ -61,7 +61,7 @@ type SubcommandConfig interface {
 	GetCommonConfig() *CommonConfig
 }
 
-func RegisterObservability(fs *flag.FlagSet, c *ObservabilityConfig) {
+func RegisterObservability(fs *pflag.FlagSet, c *ObservabilityConfig) {
 	fs.BoolVar(
 		&c.ExportOtelTraces,
 		"export-otel-traces",
@@ -82,7 +82,7 @@ func RegisterObservability(fs *flag.FlagSet, c *ObservabilityConfig) {
 	)
 }
 
-func RegisterCommon(fs *flag.FlagSet, c *CommonConfig) {
+func RegisterCommon(fs *pflag.FlagSet, c *CommonConfig) {
 	envLogLevel := internal.EnvOrDefault("LOG_LEVEL", "info")
 	envParsedLogLevel, err := logrus.ParseLevel(envLogLevel)
 	if err != nil {

@@ -1,17 +1,13 @@
 services:
-  notifications-api:
-    extends:
-      file: ../../docker-compose.yaml
-      service: notifications-api
+  notifications-api: &notifications-api-observability-env-overrides
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4317
       EXPORT_OTEL_TRACES: true
       EXPORT_OTEL_METRICS: true
 
-  postgres:
-    extends:
-      file: ../../docker-compose.yaml
-      service: postgres
+  smtp-debug: *notifications-api-observability-env-overrides
+
+  smtp-proxy: *notifications-api-observability-env-overrides
 
   prometheus:
     image: prom/prometheus:latest

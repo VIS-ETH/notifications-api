@@ -24,7 +24,7 @@ const (
 
 var (
 	retryFailedIntervalMicroseconds = 1 * time.Hour.Microseconds()
-	keepMailsForIntervalDays        = /* 2 weeks */ 14
+	keepMailsForIntervalDays        = 120 /* days */
 )
 
 // HandleMailQueue continuously watches the database (every minute) and

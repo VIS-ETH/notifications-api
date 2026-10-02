@@ -1,8 +1,7 @@
 package config
 
 import (
-	"flag"
-
+	"github.com/spf13/pflag"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal"
 )
 
@@ -31,7 +30,8 @@ func (c *SMTPProxyConfig) ObservabilitySetup() bool {
 	return true
 }
 
-func RegisterSMTPProxy(fs *flag.FlagSet, c *SMTPProxyConfig) {
+func RegisterSMTPProxy(fs *pflag.FlagSet, c *SMTPProxyConfig) {
+	RegisterCommon(fs, &c.CommonConfig)
 	fs.StringVar(
 		&c.GrpcClientAuthMode,
 		"grpc-client-auth",
@@ -79,14 +79,14 @@ func RegisterSMTPProxy(fs *flag.FlagSet, c *SMTPProxyConfig) {
 	// TLS Configurations
 	fs.StringVar(
 		&c.SMTPServerTLSCertPath,
-		"tls-cert-path",
-		"",
+		"smtp-server-tls-cert-path",
+		internal.EnvOrDefault("SMTP_SERVER_TLS_CERT_PATH", ""),
 		"Path to the TLS certificate file",
 	)
 	fs.StringVar(
 		&c.SMTPServerTLSKeyPath,
-		"tls-key-path",
-		"",
+		"smtp-server-tls-key-path",
+		internal.EnvOrDefault("SMTP_SERVER_TLS_KEY_PATH", ""),
 		"Path to the TLS key file",
 	)
 	fs.StringVar(

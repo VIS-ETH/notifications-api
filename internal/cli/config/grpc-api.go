@@ -1,9 +1,9 @@
 package config
 
 import (
-	"flag"
 	"strings"
 
+	"github.com/spf13/pflag"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal"
 )
 
@@ -28,7 +28,7 @@ func (c APIConfig) ObservabilitySetup() bool {
 	return true
 }
 
-func RegisterAPI(fs *flag.FlagSet, c *APIConfig) {
+func RegisterAPI(fs *pflag.FlagSet, c *APIConfig) {
 	RegisterCommon(fs, &c.CommonConfig)
 
 	// SMTP Target Endpoint Config
