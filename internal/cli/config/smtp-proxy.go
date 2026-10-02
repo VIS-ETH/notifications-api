@@ -6,7 +6,7 @@ import (
 )
 
 type SMTPProxyConfig struct {
-	CommonConfig CommonConfig
+	CommonConfig *CommonConfig
 
 	GrpcClientAuthMode string
 	GrpcServerAddress  string
@@ -22,16 +22,9 @@ type SMTPProxyConfig struct {
 	OIDCServiceAccount OIDCServiceAccountConfig
 }
 
-func (c *SMTPProxyConfig) GetCommonConfig() *CommonConfig {
-	return &c.CommonConfig
-}
+func RegisterSMTPProxy(fs *pflag.FlagSet, c *SMTPProxyConfig, commonConfig *CommonConfig) {
+	c.CommonConfig = commonConfig
 
-func (c *SMTPProxyConfig) ObservabilitySetup() bool {
-	return true
-}
-
-func RegisterSMTPProxy(fs *pflag.FlagSet, c *SMTPProxyConfig) {
-	RegisterCommon(fs, &c.CommonConfig)
 	fs.StringVar(
 		&c.GrpcClientAuthMode,
 		"grpc-client-auth",

@@ -20,27 +20,15 @@ import (
 )
 
 func HandleSMTPProxy(c *config.SMTPProxyConfig) error {
-	logrus.Infof("Starting SMTP Proxy with parameters: %v", map[string]any{
-		"Logging Only":             c.CommonConfig.LoggingOnly,
-		"GRPC Authentication mode": c.GrpcClientAuthMode,
-		"GRPC OIDC Client ID":      c.OIDCServiceAccount.OIDCClientID,
-		"OIDC Token Endpoint":      c.OIDCServiceAccount.OIDCTokenEndpoint,
-		"SMTP Authentication mode": c.SMTPServerAuth,
-		"SMTP Server TLS":          c.SMTPServerTLS,
-		"SMTP Allow Insecure Auth": c.SMTPServerAllowInsecureAuth,
-		"Log Level":                c.CommonConfig.LogLevel,
-		"Export OTEL Traces":       c.CommonConfig.Observability.ExportOtelTraces,
-		"Export OTEL Metrics":      c.CommonConfig.Observability.ExportOtelMetrics,
-		"Exporter Address":         c.CommonConfig.Observability.PrometheusExporterAddr,
-	})
+	logrus.Infof("Starting SMTP Proxy")
 
 	parsedSMTPAuthMode, err := parseSMTPAuthMode(c.SMTPServerAuth)
 	if err != nil {
-		return fmt.Errorf("Failed to parse SMTP auth mode: %v", err)
+		return fmt.Errorf("failed to parse SMTP auth mode: %v", err)
 	}
 	parsedGrpcAuthMode, err := parseGrpcAuthMode(c.GrpcClientAuthMode)
 	if err != nil {
-		return fmt.Errorf("Failed to parse gRPC auth mode: %v", err)
+		return fmt.Errorf("failed to parse gRPC auth mode: %v", err)
 	}
 
 	if parsedGrpcAuthMode == smtpproxy.GrpcAuthModeOIDCInject && c.OIDCServiceAccount.OIDCClientID == "" || c.OIDCServiceAccount.OIDCClientSecret == "" {
@@ -92,7 +80,7 @@ func HandleSMTPProxy(c *config.SMTPProxyConfig) error {
 	if c.SMTPServerTLS {
 		tlsConfig, err = loadTLSConfig(c.SMTPServerTLSCertPath, c.SMTPServerTLSKeyPath)
 		if err != nil {
-			return fmt.Errorf("Failed to load TLS configuration: %v", err)
+			return fmt.Errorf("failed to load TLS configuration: %v", err)
 		}
 	}
 	srv.TLSConfig = tlsConfig
@@ -127,7 +115,7 @@ func HandleSMTPProxy(c *config.SMTPProxyConfig) error {
 		return srv.Shutdown(ctx)
 	})
 
-	return fmt.Errorf("Item in error group failed: %v", eg.Wait())
+	return fmt.Errorf("item in error group failed: %v", eg.Wait())
 }
 
 func parseSMTPAuthMode(input string) (smtpproxy.SMTPAuthMode, error) {

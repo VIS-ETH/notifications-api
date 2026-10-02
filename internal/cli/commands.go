@@ -18,20 +18,38 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 )
 
+type Middleware func(CobraRunE) CobraRunE
+
 const (
 	OtelSendAfterShutdownTimeout = 20 * time.Second
 )
 
 type CobraRunE func(*cobra.Command, []string) error
 
+var rootConfig = &config.CommonConfig{}
+
 var rootCmd = &cobra.Command{
-	Use:   "notifications-api",
-	Short: "Central API managing notifications and messaging",
+	Use:          "notifications-api",
+	Short:        "Central API managing notifications and messaging",
+	SilenceUsage: true,
+
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		parsedLogLevel, err := logrus.ParseLevel(rootConfig.LogLevel)
+		if err != nil {
+			return fmt.Errorf("failed to parse env-set log level: %v", err)
+		}
+		logrus.SetLevel(parsedLogLevel)
+		logrus.Infof("Log level set to %s", parsedLogLevel.String())
+
+		return nil
+	},
 }
 
 func Init() {
-	rootCmd.AddCommand(getSMTPProxyCommand())
-	rootCmd.AddCommand(getGrpcApiCommand())
+	config.RegisterCommon(rootCmd.PersistentFlags(), rootConfig)
+
+	rootCmd.AddCommand(getSMTPProxyCommand(rootConfig))
+	rootCmd.AddCommand(getGrpcApiCommand(rootConfig))
 }
 
 func Execute() {
@@ -45,72 +63,104 @@ func Execute() {
 	}
 }
 
-func withObservability(cfg config.SubcommandConfig, run CobraRunE) CobraRunE {
-	return func(cmd *cobra.Command, args []string) (err error) {
-		ctx := cmd.Context()
-
-		res, err := resource.Merge(resource.Default(),
-			resource.NewWithAttributes(
-				semconv.SchemaURL,
-				semconv.ServiceName(cmd.Use),
-			))
-		if err != nil {
-			return fmt.Errorf("Failed to create resource. Error: %v", err)
-		}
-
-		if cfg.GetCommonConfig().Observability.ExportOtelTraces {
-			tracerProvider, err := observability.SetupTracer(ctx, res)
-			if err != nil {
-				logrus.Fatalf("Failed to setup observability (tracer): %v", err)
-			}
-			sctx, cancel := context.WithTimeout(context.Background(), OtelSendAfterShutdownTimeout)
-			defer cancel()
-			defer func() {
-				if err2 := tracerProvider.Shutdown(sctx); err2 != nil {
-					err = errors.Join(err, fmt.Errorf("Failed to shutdown tracerprovider: %v", err2))
-				}
-			}()
-		}
-
-		meterProvider, err := observability.SetupMetrics(ctx, cfg.GetCommonConfig().Observability.ExportOtelMetrics, res)
-		if err != nil {
-			return fmt.Errorf("Failed to setup observability (tracer): %v", err)
-		}
-		defer func() {
-			sctx, cancel := context.WithTimeout(context.Background(), OtelSendAfterShutdownTimeout)
-			defer cancel()
-			if err2 := meterProvider.Shutdown(sctx); err2 != nil {
-				err = errors.Join(err, fmt.Errorf("Failed to shutdown metricsprovider: %v", err2))
-			}
-		}()
-
-		err = run(cmd, args)
-		return
-	}
-}
-
-func getSMTPProxyCommand() *cobra.Command {
+func getSMTPProxyCommand(rootConfig *config.CommonConfig) *cobra.Command {
 	c := &config.SMTPProxyConfig{}
 	subcmd := &cobra.Command{
 		Use: "smtp-proxy",
-		RunE: withObservability(c, func(cmd *cobra.Command, args []string) error {
-			return actions.HandleSMTPProxy(c)
-		}),
+		RunE: chain(
+			func(cmd *cobra.Command, args []string) error {
+				return actions.HandleSMTPProxy(c)
+			},
+			withStartupLog(rootConfig, c),
+			withObservability(rootConfig),
+		),
 	}
 	fs := subcmd.Flags()
-	config.RegisterSMTPProxy(fs, c)
+	config.RegisterSMTPProxy(fs, c, rootConfig)
 	return subcmd
 }
 
-func getGrpcApiCommand() *cobra.Command {
+func getGrpcApiCommand(rootConfig *config.CommonConfig) *cobra.Command {
 	c := &config.APIConfig{}
 	subcmd := &cobra.Command{
 		Use: "grpc-api",
-		RunE: withObservability(c, func(cmd *cobra.Command, args []string) error {
-			return actions.HandleNotificationsAPI(cmd.Context(), c)
-		}),
+		RunE: chain(
+			func(cmd *cobra.Command, args []string) error {
+				return actions.HandleNotificationsAPI(cmd.Context(), c)
+			},
+			withStartupLog(rootConfig, c),
+			withObservability(rootConfig),
+		),
 	}
 	fs := subcmd.Flags()
-	config.RegisterAPI(fs, c)
+	config.RegisterAPI(fs, c, rootConfig)
 	return subcmd
+}
+
+func chain(run CobraRunE, mws ...Middleware) CobraRunE {
+	for i := len(mws) - 1; i >= 0; i-- {
+		run = mws[i](run)
+	}
+	return run
+}
+
+func withStartupLog(rootConfig *config.CommonConfig, subConfig any) Middleware {
+	return func(next CobraRunE) CobraRunE {
+		return func(cmd *cobra.Command, args []string) error {
+			fields, err := config.ConfigFields(subConfig, rootConfig.LogStartupOptions)
+			if err != nil {
+				return err
+			}
+			if fields != nil {
+				logrus.WithFields(config.Flatten(fields)).
+					Infof("starting %s", cmd.Name())
+			}
+			return next(cmd, args)
+		}
+	}
+}
+
+func withObservability(rootConfig *config.CommonConfig) Middleware {
+	return func(next CobraRunE) CobraRunE {
+		return func(cmd *cobra.Command, args []string) (err error) {
+			ctx := cmd.Context()
+
+			res, err := resource.Merge(resource.Default(),
+				resource.NewWithAttributes(
+					semconv.SchemaURL,
+					semconv.ServiceName(cmd.Use),
+				))
+			if err != nil {
+				return fmt.Errorf("failed to create resource: %w", err)
+			}
+
+			if rootConfig.Observability.ExportOtelTraces {
+				tracerProvider, terr := observability.SetupTracer(ctx, res)
+				if terr != nil {
+					return fmt.Errorf("failed to setup observability (tracer): %w", terr)
+				}
+				defer func() {
+					sctx, cancel := context.WithTimeout(context.Background(), OtelSendAfterShutdownTimeout)
+					defer cancel()
+					if serr := tracerProvider.Shutdown(sctx); serr != nil {
+						err = errors.Join(err, fmt.Errorf("failed to shutdown tracerprovider: %w", serr))
+					}
+				}()
+			}
+
+			meterProvider, merr := observability.SetupMetrics(ctx, rootConfig.Observability.ExportOtelMetrics, res)
+			if merr != nil {
+				return fmt.Errorf("failed to setup observability (metrics): %w", merr)
+			}
+			defer func() {
+				sctx, cancel := context.WithTimeout(context.Background(), OtelSendAfterShutdownTimeout)
+				defer cancel()
+				if serr := meterProvider.Shutdown(sctx); serr != nil {
+					err = errors.Join(err, fmt.Errorf("failed to shutdown metricsprovider: %w", serr))
+				}
+			}()
+
+			return next(cmd, args)
+		}
+	}
 }

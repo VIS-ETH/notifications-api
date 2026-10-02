@@ -2,11 +2,8 @@ package config
 
 import (
 	"crypto/tls"
-	"errors"
-	"fmt"
 	"strings"
 
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal"
 	smtpproxy "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/smtp-proxy"
@@ -49,16 +46,11 @@ type OIDCServiceAccountConfig struct {
 
 // General configs
 type CommonConfig struct {
-	LoggingOnly bool
-	LogLevel    logrus.Level
+	LoggingOnly       bool
+	LogLevel          string
+	LogStartupOptions string
 
 	Observability ObservabilityConfig
-	SubcommandConfig
-}
-
-type SubcommandConfig interface {
-	// Common configuration that is available for all commands
-	GetCommonConfig() *CommonConfig
 }
 
 func RegisterObservability(fs *pflag.FlagSet, c *ObservabilityConfig) {
@@ -83,13 +75,6 @@ func RegisterObservability(fs *pflag.FlagSet, c *ObservabilityConfig) {
 }
 
 func RegisterCommon(fs *pflag.FlagSet, c *CommonConfig) {
-	envLogLevel := internal.EnvOrDefault("LOG_LEVEL", "info")
-	envParsedLogLevel, err := logrus.ParseLevel(envLogLevel)
-	if err != nil {
-		logrus.Fatalf("Failed to parse env-set log level: %v", err)
-	}
-	c.LogLevel = envParsedLogLevel
-
 	fs.BoolVar(
 		&c.LoggingOnly,
 		"logging-only",
@@ -98,22 +83,18 @@ func RegisterCommon(fs *pflag.FlagSet, c *CommonConfig) {
 		"Only log notifications, without sending",
 	)
 
-	setLogLevelAlready := false
-	fs.Func(
+	fs.StringVar(
+		&c.LogLevel,
 		"log-level",
+		internal.EnvOrDefault("LOG_LEVEL", "info"),
 		"Setting the log level",
-		func(value string) error {
-			if setLogLevelAlready {
-				return errors.New("log-level flag already set")
-			}
-			setLogLevelAlready = true
-			logLevel, err := logrus.ParseLevel(value)
-			if err != nil {
-				return fmt.Errorf("Failed to parse log level: %v", err)
-			}
-			c.LogLevel = logLevel
-			return nil
-		},
+	)
+
+	fs.StringVar(
+		&c.LogStartupOptions,
+		"log-startup-options",
+		internal.EnvOrDefault("LOG_STARTUP_OPTIONS", "redact-confidential"),
+		"Whether to log startup CLI commands. Must be one of [all, redact-confidential, none].",
 	)
 
 	RegisterObservability(fs, &c.Observability)

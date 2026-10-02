@@ -36,31 +36,19 @@ func HandleNotificationsAPI(ctx context.Context, c *config.APIConfig) error {
 	if !c.CommonConfig.LoggingOnly {
 		err := database.MigrateDB(&c.DatabaseDSN, &c.DatabaseMigrationsDir)
 		if err != nil {
-			logrus.Fatalf("Failed to perform migrations... Is your database functional? %+v", err)
+			return fmt.Errorf("failed to perform migrations... Is your database functional? %+v", err)
 		}
 
 		pool, err := pgxpool.New(ctx, c.DatabaseDSN)
 		if err != nil {
-			logrus.Fatalf("failed to create db pool: %v", err)
+			return fmt.Errorf("failed to create db pool: %v", err)
 		}
 		defer pool.Close()
 
 		queries = sql.New(pool)
 	}
 
-	logrus.Infof("Starting Notifications API with parameters: %v", map[string]any{
-		"Unauthenticated gRPC": c.GrpcUnauthenticated,
-		"Logging only":         c.CommonConfig.LoggingOnly,
-		"gRPC server address":  c.GrpcAddr,
-		"SMTP endpoint":        c.SMTPTargetConfig.Endpoint,
-		"SMTP sender name":     c.SMTPTargetConfig.DefaultSenderName,
-		"SMTP sender address":  c.SMTPTargetConfig.DefaultSenderAddress,
-		"SMTP Username":        c.SMTPTargetConfig.AuthUsername,
-		//"Database URL":         *dsnFlag,
-		"Migrations dir":       c.DatabaseMigrationsDir,
-		"Export OTEL Metrics:": c.CommonConfig.Observability.ExportOtelMetrics,
-		"Export OTEL Traces:":  c.CommonConfig.Observability.ExportOtelTraces,
-	})
+	logrus.Infof("Starting Notifications API")
 
 	var jwtKeyFunc func(*jwt.Token) (any, error)
 	if c.GrpcUnauthenticated {
@@ -68,9 +56,9 @@ func HandleNotificationsAPI(ctx context.Context, c *config.APIConfig) error {
 			return nil, nil
 		}
 	} else {
-		k, err := keyfunc.NewDefaultCtx(context.Background(), []string{c.OIDCConfig.OIDCJWKSURL})
+		k, err := keyfunc.NewDefaultCtx(ctx, []string{c.OIDCConfig.OIDCJWKSURL})
 		if err != nil {
-			logrus.Fatalf("Failed to create a keyfunc.Keyfunc from the server's URL. Error: %v", err)
+			return fmt.Errorf("failed to create a keyfunc.Keyfunc from the server's URL. Error: %v", err)
 		}
 		jwtKeyFunc = k.Keyfunc
 	}
@@ -100,8 +88,7 @@ func HandleNotificationsAPI(ctx context.Context, c *config.APIConfig) error {
 	if err != nil {
 		logrus.Fatalf("failed to create OTEL counter: %v", err)
 	}
-	counter.Add(ctx, 4, metric.WithAttributes(attribute.String("impl", "smtp")))
-	counter.Add(ctx, 4, metric.WithAttributes(attribute.String("impl", "test")))
+	counter.Add(ctx, 4, metric.WithAttributes(attribute.String("backend", "smtp")))
 
 	mailSender, err := mailer.NewSMTPMailSender(
 		c.SMTPTargetConfig.DefaultSenderAddress,
@@ -164,13 +151,13 @@ func HandleNotificationsAPI(ctx context.Context, c *config.APIConfig) error {
 	eg.Go(func() error {
 		l, err := net.Listen("tcp", c.GrpcAddr)
 		if err != nil {
-			return fmt.Errorf("Failed to listen: %v", err)
+			return fmt.Errorf("failed to listen: %v", err)
 		}
-		logrus.Printf("Serving gRPC at %s", l.Addr().String())
+		logrus.Infof("Serving gRPC at %s", l.Addr().String())
 
 		err = grpcServer.Serve(l)
 		if err != nil {
-			return fmt.Errorf("failed to serve: %v")
+			return fmt.Errorf("failed to serve: %v", err)
 		}
 		return nil
 	})
@@ -180,5 +167,5 @@ func HandleNotificationsAPI(ctx context.Context, c *config.APIConfig) error {
 		return nil
 	})
 
-	return fmt.Errorf("Item in error group failed: %v", eg.Wait())
+	return fmt.Errorf("item in error group failed: %v", eg.Wait())
 }

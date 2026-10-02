@@ -8,7 +8,7 @@ import (
 )
 
 type APIConfig struct {
-	CommonConfig CommonConfig
+	CommonConfig *CommonConfig
 
 	SMTPTargetConfig SMTPClientConfig
 	OIDCConfig       OIDCConfig
@@ -16,20 +16,12 @@ type APIConfig struct {
 	GrpcUnauthenticated bool
 	GrpcAddr            string
 
-	DatabaseDSN           string
+	DatabaseDSN           string `confidential:"true"`
 	DatabaseMigrationsDir string
 }
 
-func (c APIConfig) GetCommonConfig() *CommonConfig {
-	return &c.CommonConfig
-}
-
-func (c APIConfig) ObservabilitySetup() bool {
-	return true
-}
-
-func RegisterAPI(fs *pflag.FlagSet, c *APIConfig) {
-	RegisterCommon(fs, &c.CommonConfig)
+func RegisterAPI(fs *pflag.FlagSet, c *APIConfig, commonConfig *CommonConfig) {
+	c.CommonConfig = commonConfig
 
 	// SMTP Target Endpoint Config
 	fs.StringVar(
