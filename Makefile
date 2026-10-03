@@ -20,7 +20,7 @@ codegen: clean
 	  notifications-api-codegen \
 		-c 'cp -R /app/generated /'
 else
-codegen: clean generate-protos generate-sqlc
+codegen: clean generate-protos generate-sqlc generate-mockery
 endif
 
 .PHONY: clean-sql clean-pb clean-mockery clean

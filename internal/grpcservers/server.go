@@ -9,14 +9,14 @@ import (
 )
 
 type SlackServer struct {
-	loggingOnly     *bool
-	unauthenticated *bool
+	loggingOnly     bool
+	unauthenticated bool
 	slackClient     *slack.Client
 	logger          *logrus.Entry
 	pb.UnimplementedSlackMessagingServiceServer
 }
 
-func NewSlackServer(loggingOnly, unauthenticated *bool, slackClient *slack.Client) *SlackServer {
+func NewSlackServer(loggingOnly, unauthenticated bool, slackClient *slack.Client) *SlackServer {
 	serverLogger := logrus.WithFields(logrus.Fields{
 		"component": "slack-message-server",
 	})

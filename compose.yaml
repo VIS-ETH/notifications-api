@@ -4,7 +4,7 @@ services:
   smtp-debug:
     build: .
     ports: [2225:2225]
-    command: "/smtp-proxy"
+    command: ["smtp-proxy"]
     environment:
       NOTIFICATIONS_LOGGING_ONLY: true
       LOG_LEVEL: trace
@@ -18,7 +18,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: "/notifications-server"
+    command: ["grpc-api"]
     env_file:
       - required: false
         path: .env.local
@@ -34,7 +34,7 @@ services:
   smtp-proxy:
     build: .
     ports: [2226:2226]
-    command: "/smtp-proxy"
+    command: ["smtp-proxy"]
     env_file:
       - required: false
         path: .env.local

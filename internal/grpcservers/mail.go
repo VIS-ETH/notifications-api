@@ -217,7 +217,7 @@ func (s *MailServer) preprocessIncomingMailRequest(ctx context.Context, mailReq 
 		}
 		sender = s.mailSender.GetSender(desiredSender)
 	}
-	s.logger.Errorf("test: %v", sender)
+
 	sanitizedMail, err := pbMailToSanitizedMail(mailReq, sender)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Provided message was invalid: %v", err)

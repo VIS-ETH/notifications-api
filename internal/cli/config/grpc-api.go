@@ -1,19 +1,29 @@
 package config
 
 import (
-	"flag"
+	"strings"
 
+	"github.com/spf13/pflag"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal"
 )
 
 type APIConfig struct {
+	CommonConfig *CommonConfig
+
 	SMTPTargetConfig SMTPClientConfig
 	OIDCConfig       OIDCConfig
+
+	GrpcUnauthenticated bool
+	GrpcAddr            string
+
+	DatabaseDSN           string `confidential:"true"`
+	DatabaseMigrationsDir string
 }
 
-func RegisterAPI(fs *flag.FlagSet, args []string) *APIConfig {
-	c := &APIConfig{}
+func RegisterAPI(fs *pflag.FlagSet, c *APIConfig, commonConfig *CommonConfig) {
+	c.CommonConfig = commonConfig
 
+	// SMTP Target Endpoint Config
 	fs.StringVar(
 		&c.SMTPTargetConfig.Endpoint,
 		"smtp-url",
@@ -51,6 +61,7 @@ func RegisterAPI(fs *flag.FlagSet, args []string) *APIConfig {
 		"Message ID suffix",
 	)
 
+	// OIDC Config
 	fs.StringVar(
 		&c.OIDCConfig.OIDCClientID,
 		"oidc-client-id",
@@ -59,16 +70,48 @@ func RegisterAPI(fs *flag.FlagSet, args []string) *APIConfig {
 	)
 	fs.StringVar(
 		&c.OIDCConfig.OIDCClientSecret,
-		"oidc-issuer",
-		internal.EnvOrDefault("SIP_AUTH_OIDC_ISSUER", "https://keycloak-fake.vis.ethz.ch/realms/VSETH"),
-		"Issuer URL for OIDC",
+		"oidc-client-secret",
+		internal.EnvOrDefault("SIP_AUTH_OIDC_CLIENT_SECRET", "notifications-api"),
+		"Client Secret used for Notifications API",
 	)
 	fs.StringVar(
 		&c.OIDCConfig.OIDCJWKSURL,
 		"oidc-client-jwks-url",
 		internal.EnvOrDefault("SIP_AUTH_OIDC_JWKS_URL", "https://keycloak-fake.vis.ethz.ch/realms/VSETH/protocol/openid-connect/certs"),
-		"Client ID used for Notifications API",
+		"OIDC JWKS URL used for Notifications API",
+	)
+	fs.StringVar(
+		&c.OIDCConfig.OIDCIssuerURL,
+		"oidc-issuer",
+		internal.EnvOrDefault("SIP_AUTH_OIDC_ISSUER", "https://keycloak-fake.vis.ethz.ch/realms/VSETH"),
+		"Issuer URL for OIDC",
 	)
 
-	return c
+	// GRPC Server configs
+	fs.BoolVar(
+		&c.GrpcUnauthenticated,
+		"grpc-unauthenticated",
+		strings.ToLower(internal.EnvOrDefault("NOTIFICATIONS_UNAUTHENTICATED", "false")) == "true",
+		"Skip authentication checks on incoming gRPC requests",
+	)
+	fs.StringVar(
+		&c.GrpcAddr,
+		"grpc-addr",
+		internal.EnvOrDefault("NOTIFICATIONS_BACKEND_GRPC_PORT", ":6781"),
+		"gRPC listen address",
+	)
+
+	// DB flags
+	fs.StringVar(
+		&c.DatabaseDSN,
+		"database-url",
+		internal.EnvOrDefault("POSTGRES_DSN", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"),
+		"PostgreSQL DSN",
+	)
+	fs.StringVar(
+		&c.DatabaseMigrationsDir,
+		"migrations-dir",
+		internal.EnvOrDefault("MIGRATIONS_DIR", "sql/migrations"),
+		"Directory containing SQL migrations (sql-migrate)",
+	)
 }
