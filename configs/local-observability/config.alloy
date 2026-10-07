@@ -9,6 +9,7 @@ otelcol.exporter.otlp "default" {
 }
 
 otelcol.exporter.prometheus "default" {
+  resource_to_telemetry_conversion = true
   forward_to = [prometheus.remote_write.default.receiver]
 }
 

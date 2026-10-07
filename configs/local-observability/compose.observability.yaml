@@ -1,18 +1,39 @@
+x-notifications-api-observability:
+  environment: &notifications-api-observability-env-overrides
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4317
+    PROMETHEUS_EXPORTER_ADDR: :9001
+    EXPORT_OTEL_TRACES: true
+    EXPORT_OTEL_METRICS: true
+
 services:
-  notifications-api: &notifications-api-observability-env-overrides
+  notifications-api:
+    ports:
+      - 9001:9001
     environment:
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4317
-      EXPORT_OTEL_TRACES: true
-      EXPORT_OTEL_METRICS: true
+      <<: *notifications-api-observability-env-overrides
+      OTEL_SERVICE_NAME: notifications-api
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=notifications,service.instance.id=notifications-api,deployment.environment=dev
 
-  smtp-debug: *notifications-api-observability-env-overrides
+  smtp-debug:
+    ports:
+      - 9002:9001
+    environment:
+      <<: *notifications-api-observability-env-overrides
+      OTEL_SERVICE_NAME: smtp-debug
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=notifications,service.instance.id=smtp-debug,deployment.environment=dev
 
-  smtp-proxy: *notifications-api-observability-env-overrides
+  smtp-proxy:
+    ports:
+      - 9003:9001
+    environment:
+      <<: *notifications-api-observability-env-overrides
+      OTEL_SERVICE_NAME: smtp-proxy
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=notifications,service.instance.id=smtp-proxy,deployment.environment=dev
 
   prometheus:
     image: prom/prometheus:latest
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./configs/local-observability/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./data/prometheus:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -29,8 +50,8 @@ services:
       - "3000:3000"
     volumes:
       - ./data/grafana:/var/lib/grafana
-      - ./grafana:/etc/grafana/provisioning
-      - ../dashboards:/etc/grafana/dashboardFiles
+      - ./configs/local-observability/grafana:/etc/grafana/provisioning
+      - ./configs/dashboards:/etc/grafana/dashboardFiles
     user: ":"
 
   alloy:
@@ -40,7 +61,7 @@ services:
       - "12347:12347"
       - "4317:4317"
     volumes:
-      - ./config.alloy:/etc/alloy/config.alloy
+      - ./configs/local-observability/config.alloy:/etc/alloy/config.alloy
     command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
 
   loki:
@@ -50,7 +71,7 @@ services:
       - "9600:9600"
     command: -config.file=/etc/loki/local-config.yml --log.level=info
     volumes:
-      - ./loki-local-config.yml:/etc/loki/local-config.yml
+      - ./configs/local-observability/loki.yml:/etc/loki/local-config.yml
 
   tempo:
     image: grafana/tempo:latest
@@ -58,7 +79,7 @@ services:
       - "3200:3200"
     command: -config.file=/etc/tempo/tempo.yml
     volumes:
-      - ./tempo.yml:/etc/tempo/tempo.yml
+      - ./configs/local-observability/tempo.yml:/etc/tempo/tempo.yml
 
   pyroscope:
     image: grafana/pyroscope:latest

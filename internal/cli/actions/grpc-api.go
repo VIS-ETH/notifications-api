@@ -22,9 +22,6 @@ import (
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/slack"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -78,17 +75,6 @@ func HandleNotificationsAPI(ctx context.Context, c *config.APIConfig) error {
 			Password: c.SMTPTargetConfig.AuthPassword,
 		}
 	}
-
-	meter := otel.Meter("mailer-meter")
-	counter, err := meter.Int64Counter(
-		"mail_sender_total_mail_count",
-		metric.WithDescription("Total mails sent by mailer"),
-		metric.WithUnit("{call}"),
-	)
-	if err != nil {
-		logrus.Fatalf("failed to create OTEL counter: %v", err)
-	}
-	counter.Add(ctx, 4, metric.WithAttributes(attribute.String("backend", "smtp")))
 
 	mailSender, err := mailer.NewSMTPMailSender(
 		c.SMTPTargetConfig.DefaultSenderAddress,

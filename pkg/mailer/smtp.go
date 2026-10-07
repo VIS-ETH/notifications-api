@@ -79,7 +79,6 @@ func (s *SMTPMailSender) TransmitMail(ctx context.Context, m *Mail) error {
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			attribute.String("smtp.from", m.From.Address),
-			semconv.NetworkProtocolName("smtp"),
 			semconv.ServerAddress(s.smtpEndpoint.Hostname()),
 			semconv.NetworkProtocolName("smtp"),
 			attribute.Int("smtp.message_size", len(m.Body)),
