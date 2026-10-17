@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -41,11 +42,12 @@ func (h *AuthMockServerHandle) URL() string {
 	return h.issuerURL
 }
 
-func (a *AuthMockServerHandle) StartHttpTestServer() (*httptest.Server, error) {
+func (a *AuthMockServerHandle) StartHttpTestServer(t *testing.T) (*httptest.Server, error) {
 	if url := a.issuerURL; url != "" {
 		return nil, fmt.Errorf("mock server already started at %s", url)
 	}
-	srv := httptest.NewServer(a.handler)
+	srv := httptest.NewTestServer(t, a.handler)
+	srv.Start()
 	a.issuerURL = srv.URL
 	return srv, nil
 }
