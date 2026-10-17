@@ -12,7 +12,9 @@ option go_package = "servis/sip/notifications";
 // Whether or not mails are allowed to be sent is checked based on the roles in this token.
 // - The "mail" role determines whether a client is allowed to mail at all.
 // - The "mail-sender:<address>" roles determine whether a client is allowed to send mails from the sender <address>.
+// - The "mail-viewer:<address>" roles determine whether a client is allowed to view mails in the audit logs from the sender <address>.
 // - The "mail-header:<header>" roles determine whether a client is allowed to send mails with the extra header <header>.
+// - The "admin" role allows _everything_.
 // This allows VSETH to manage one central Mail client, and handle permission management for sender addresses.
 service MailService {
 
@@ -35,6 +37,12 @@ service MailService {
   // API reserves filling in sender address and name, and applications might want
   // to check before sending.
   rpc SendDryRun(Mail) returns (Mail);
+
+  // ViewMails returns a set of all mails that have been sent over the Notifications API.
+  // Such audits might be pruned after some time to save storage, but also in order to be compliant, too.
+  // The permission checks are as described for the MailService itself, via the "mail-viewer:<address>" role.
+  // The admin role allows everything
+  rpc ViewMails(ViewMailsRequest) returns (ViewMailsResponse);
 }
 
 message Mail {
@@ -169,4 +177,13 @@ message MailResponse {
 
 message QueueResponse {
   string mail_id = 1;
+}
+
+message ViewMailsRequest {
+  // Optional filter by sender address
+  string from = 1;
+  // Optional filter by recipient address
+  string to = 2;
+  // Optional filter by subject
+  string subject = 3;
 }
