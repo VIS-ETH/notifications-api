@@ -24,6 +24,7 @@ import (
 	mockery_mailer "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/mockery/pkg/mailer"
 	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/pb/sip/notifications"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
+	authmock "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth/mock"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/grpcservers"
 	smtpproxy "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/smtp-proxy"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
@@ -49,12 +50,16 @@ func (f RoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func TestPassthroughAuth(t *testing.T) {
 	logrus.SetLevel(logrus.TraceLevel)
-	authServer, err := GetAuthServer("test", "test")
+	authMockSrvHandle, err := authmock.NewAuthMockServerHandle("test", "test")
 	if err != nil {
 		t.Fatalf("Failed to start auth server: %v", err)
 	}
-	log.Printf("Auth server started at %s", authServer.URL)
-	defer authServer.Close()
+	authMockSrv, err := authMockSrvHandle.StartHttpTestServer()
+	if err != nil {
+		t.Fatalf("Could not start mock server: %v", err)
+	}
+	defer authMockSrv.Close()
+	log.Printf("Auth server started at %s", authMockSrv.URL)
 
 	querier := mockery_sql.NewMockQuerier(t)
 	mockMailer := mockery_mailer.NewMockMailSender(t)
@@ -70,6 +75,7 @@ func TestPassthroughAuth(t *testing.T) {
 			assert.Equal(t, "test2@local.local", m.To[0].Address)
 			assert.Equal(t, "Test", m.Subject)
 			assert.True(t, strings.HasSuffix(m.MessageID, "testing-mail-suffix"))
+			assert.Equal(t, mailer.Binary{Content: []byte("This is a test email.\r\n")}, m.Body)
 		}).Return(nil).Call,
 		querier.EXPECT().CreateMail(mock.Anything, mock.Anything).Return(nil).Call,
 	}
@@ -79,14 +85,14 @@ func TestPassthroughAuth(t *testing.T) {
 	mock.InOrder(calls...)
 
 	k, err := keyfunc.NewDefaultCtx(context.Background(), []string{
-		authServer.URL + TestAuthServerJWKSPath,
+		authMockSrv.URL + authmock.AuthMockServerJWKSPath,
 	})
 	if err != nil {
 		logrus.Fatalf("Failed to create a keyfunc.Keyfunc from the server's URL. Error: %v", err)
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(authServer.URL, TestClientID, k.Keyfunc)),
+		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(authMockSrv.URL, TestClientID, k.Keyfunc)),
 	)
 
 	mailGrpcServer := grpcservers.NewMailServer(
@@ -151,7 +157,7 @@ func TestPassthroughAuth(t *testing.T) {
 			SMTPEnsureSender: false,
 			GrpcAuthMode:     smtpproxy.GrpcAuthModeSMTPPassthrough,
 			LoggingOnly:      false,
-			OidcConfig:       smtpproxy.NewOIDCConfig(authServer.URL+TestAuthServerTokenPath, TestClientID, TestClientSecret),
+			OidcConfig:       smtpproxy.NewOIDCConfig(authMockSrv.URL+authmock.AuthMockServerTokenPath, TestClientID, TestClientSecret),
 		}
 		srv, err = smtpproxy.GetSMTPServer(smtpProxyConfig, client)
 		srv.EnableREQUIRETLS = true
