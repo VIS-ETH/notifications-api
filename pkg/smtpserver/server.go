@@ -2,6 +2,7 @@ package smtpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -159,7 +160,7 @@ func (s *session) Data(r io.Reader) error {
 
 	parsedMail := &mailer.Mail{}
 
-	fromList, err := message.Header.AddressList("From")
+	fromList, err := getAddressList(message, "From")
 	if err != nil {
 		return fmt.Errorf("parsing from header failed: %v", err)
 	} else if len(fromList) != 1 {
@@ -171,13 +172,13 @@ func (s *session) Data(r io.Reader) error {
 		return fmt.Errorf("from header address %s does not match SMTP from %s", fromList[0].Address, s.from)
 	}
 
-	replyTo, err := message.Header.AddressList("Reply-To")
-	if err != nil && err != mail.ErrHeaderNotPresent {
+	replyTo, err := getAddressList(message, "Reply-To")
+	if err != nil && !errors.Is(err, mail.ErrHeaderNotPresent) {
 		return fmt.Errorf("parsing reply-to header failed: %v", err)
 	}
 	parsedMail.ReplyTo = replyTo
-	to, _ := message.Header.AddressList("To")
-	if err == mail.ErrHeaderNotPresent {
+	to, _ := getAddressList(message, "To")
+	if errors.Is(err, mail.ErrHeaderNotPresent) {
 		goto toRecipientsOk
 	}
 	if err != nil {
@@ -193,8 +194,8 @@ func (s *session) Data(r io.Reader) error {
 	return fmt.Errorf("to header addresses not found in SMTP recipients list")
 toRecipientsOk:
 	parsedMail.To = to
-	cc, err := message.Header.AddressList("Cc")
-	if err == mail.ErrHeaderNotPresent {
+	cc, err := getAddressList(message, "Cc")
+	if errors.Is(err, mail.ErrHeaderNotPresent) {
 		goto ccRecipientsOk
 	}
 	if err != nil {
@@ -236,13 +237,21 @@ ccRecipientsOk:
 	for _, a := range cc {
 		seen[strings.ToLower(a.Address)] = true
 	}
-	var bcc []*mail.Address
+	var bcc []mail.Address
 	for _, rcpt := range s.recipients {
 		if !seen[strings.ToLower(rcpt)] {
-			bcc = append(bcc, &mail.Address{Address: rcpt})
+			bcc = append(bcc, mail.Address{Address: rcpt})
 		}
 	}
 	parsedMail.Bcc = bcc
+
+	parsedMail.ContentType = message.Header.Get("Content-Type")
+
+	b, err := io.ReadAll(message.Body)
+	if err != nil {
+		return fmt.Errorf("reading message body from %s to [%s] failed: %v", s.from, strings.Join(s.recipients, ", "), err)
+	}
+	parsedMail.Body = mailer.Binary{Content: b}
 
 	err = s.backend.handleMessage(s.ctx, parsedMail)
 	if err != nil {
@@ -250,6 +259,27 @@ ccRecipientsOk:
 	}
 
 	return nil
+}
+
+func getAddressList(m *mail.Message, headername string) ([]mail.Address, error) {
+	if m == nil {
+		return nil, nil
+	}
+
+	l, err := m.Header.AddressList(headername)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse %s header: %w", headername, err)
+	}
+
+	var result []mail.Address
+	for _, addr := range l {
+		if addr == nil || addr.Address == "" {
+			return nil, fmt.Errorf("invalid %s header: empty address. parsed: %v", headername, addr)
+		}
+		result = append(result, *addr)
+	}
+
+	return result, nil
 }
 
 func decodeRFC2047(s string) string {

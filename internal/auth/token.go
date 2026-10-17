@@ -42,20 +42,20 @@ func (c *CustomClaims) CanMail() bool {
 	return slices.Contains(*roles, "mail")
 }
 
-func (c *CustomClaims) IsSenderAllowed(sender *string) bool {
+func (c *CustomClaims) IsSenderAllowed(sender string) bool {
 	roles := c.getRoles()
 	if roles == nil {
 		return false
 	}
 
-	return slices.Contains(*roles, "mail-sender:"+*sender)
+	return slices.Contains(*roles, "mail-sender:"+sender)
 }
 
-func (c *CustomClaims) IsHeaderAllowed(header *string) bool {
+func (c *CustomClaims) IsHeaderAllowed(header string) bool {
 	roles := c.getRoles()
 	if roles == nil {
 		return false
 	}
 
-	return slices.Contains(*roles, "mail-header:"+*header)
+	return slices.Contains(*roles, "mail-header:"+header)
 }

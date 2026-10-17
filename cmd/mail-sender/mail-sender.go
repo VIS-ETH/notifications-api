@@ -65,10 +65,10 @@ func main() {
 		context.Background(),
 		&mailer.Mail{
 			MessageID: messageID,
-			From: &mail.Address{
+			From: mail.Address{
 				Address: *from,
 			},
-			Body: *body,
+			Body: &mailer.Text{Content: *body},
 		},
 	)
 	if err != nil {

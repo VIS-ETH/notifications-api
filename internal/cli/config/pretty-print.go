@@ -48,7 +48,7 @@ func collectConfidential(v reflect.Value, out map[uintptr]bool) {
 		switch {
 		case fv.Kind() == reflect.Struct:
 			collectConfidential(fv, out)
-		case fv.Kind() == reflect.Ptr && ft.Type.Elem().Kind() == reflect.Struct:
+		case fv.Kind() == reflect.Pointer && ft.Type.Elem().Kind() == reflect.Struct:
 			if !fv.IsNil() {
 				collectConfidential(fv.Elem(), out)
 			}
@@ -60,7 +60,7 @@ func collectConfidential(v reflect.Value, out map[uintptr]bool) {
 
 func destAddr(v pflag.Value) uintptr {
 	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Ptr {
+	if rv.Kind() != reflect.Pointer {
 		return 0
 	}
 	return rv.Pointer()

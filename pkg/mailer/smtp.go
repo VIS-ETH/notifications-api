@@ -8,6 +8,7 @@ import (
 	"net/smtp"
 	"net/url"
 	"slices"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
@@ -18,6 +19,13 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+type SMTPAuth struct {
+	Username string
+	Password string
+
+	smtp.Auth
+}
+
 type SMTPMailSender struct {
 	defaultMailSenderAddress string
 	defaultMailSenderName    string
@@ -25,6 +33,24 @@ type SMTPMailSender struct {
 	logger                   *logrus.Entry
 	messageIDSuffix          string
 	auth                     *SMTPAuth
+}
+
+func (a SMTPAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+	return "LOGIN", []byte{}, nil
+}
+
+func (a SMTPAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+	if more {
+		switch string(fromServer) {
+		case "Username:":
+			return []byte(a.Username), nil
+		case "Password:":
+			return []byte(a.Password), nil
+		default:
+			return nil, fmt.Errorf("unkown fromServer: %s", string(fromServer))
+		}
+	}
+	return nil, nil
 }
 
 func NewSMTPMailSender(defaultSenderAddress, defaultSenderName, smtpEndpoint string, smtpAuth *SMTPAuth, messageIDSuffix string) (*SMTPMailSender, error) {
@@ -45,6 +71,14 @@ func NewSMTPMailSender(defaultSenderAddress, defaultSenderName, smtpEndpoint str
 		auth:                     smtpAuth,
 		messageIDSuffix:          messageIDSuffix,
 	}, nil
+}
+
+func joinAddresses(addresses []mail.Address) string {
+	strAddresses := make([]string, 0, len(addresses))
+	for _, a := range addresses {
+		strAddresses = append(strAddresses, a.String())
+	}
+	return strings.Join(strAddresses, ", ")
 }
 
 func (s *SMTPMailSender) GetSender(from mail.Address) mail.Address {
@@ -81,10 +115,15 @@ func (s *SMTPMailSender) TransmitMail(ctx context.Context, m *Mail) error {
 			attribute.String("smtp.from", m.From.Address),
 			semconv.ServerAddress(s.smtpEndpoint.Hostname()),
 			semconv.NetworkProtocolName("smtp"),
-			attribute.Int("smtp.message_size", len(m.Body)),
+			// attribute.Int("smtp.message_size", len(m)),
 		),
 	)
 	defer span.End()
+
+	fullyEncodedMessage, err := m.GetInternetMessageFormat(false)
+	if err != nil {
+		return fmt.Errorf("failed to validate or encode message: %v", err)
+	}
 
 	recipients := slices.Concat(m.To, m.Cc, m.Bcc)
 	var recipientsAddresses []string
@@ -97,12 +136,12 @@ func (s *SMTPMailSender) TransmitMail(ctx context.Context, m *Mail) error {
 	if s.auth != nil {
 		smtpAuth = s.auth
 	}
-	err := smtp.SendMail(
+	err = smtp.SendMail(
 		s.smtpEndpoint.Host,
 		smtpAuth,
 		m.From.Address,
 		recipientsAddresses,
-		[]byte(m.GetMessageContent()),
+		[]byte(fullyEncodedMessage),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to send mail: %v", err)
@@ -114,7 +153,7 @@ func (s *SMTPMailSender) TransmitMail(ctx context.Context, m *Mail) error {
 		logger.Warnf("Failed to get mail observability! %v", err)
 	} else {
 		(*mo.counter).Add(
-			context.Background(), 1,
+			ctx, 1,
 			metric.WithAttributes(
 				attribute.String("impl", "smtp"),
 				attribute.String("smtp_endpoint", s.smtpEndpoint.Host),
