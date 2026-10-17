@@ -66,21 +66,29 @@ message Mail {
   // Transfer encoding is negotiated with destination server based on available extensions.
   // Here, body explicitly means without headers!
   oneof body_oneof {
-    // Content does not have to be escaped. content_type must contain a mime type matching text/*
+    // Simplest of use cases, do not bother with anything fancy!
+    // content_type must be text/*
     string plain_text = 9;
 
-    SimpleMail simple_mail = 12;
+    // Cover most common use case of mails: html and/or plain_text with attachments
+    SimpleMail simple_mail = 10;
 
     // Content is split into multiple parts. content_type must be multipart/*
-    MimeBody multipart_body = 10;
+    MimeBody multipart_body = 11;
 
     // Raw bytes to send. content_type can be anything:) chaos
-    bytes raw_body = 11;
+    bytes raw_body = 12;
   }
 }
 
+// Cover most common use-cases:
+// - One of plain_text or html must be set.
+// - If plain_text and html are set, the mail text content is sent as multipart/alternative.
+//   Otherwise, the mail is sent as text/plain or text/html, depending on which is set.
+// - If attachments are set, the mail is sent as multipart/mixed, which includes the
+//   mail text content as the first part, and the attachments as subsequent parts.
 message SimpleMail {
-  optional string text = 1;
+  optional string plain_text = 1;
   optional string html = 2;
   repeated Attachment attachments = 3;
 }
@@ -89,13 +97,22 @@ message Attachment {
   // Will be sanitized
   string filename = 1;
   // Defaults to a guess from filename, else application/octet-stream.
+  // May include parameters (e.g. "text/calendar; method=REQUEST").
   optional string content_type = 2;
-  // Raw bytes of the content. To be encoded by base64 or other means (whatever is)
-  // more efficient.
+  // Raw bytes of the content. To be encoded by base64 or other means (whatever is
+  // more efficient).
   bytes content = 3;
-  // If set, the attachment is inline (Content-Disposition: inline) and can be
-  // referenced from html as cid:<content_id>. If unset, it is a regular attachment.
+  // Without angle brackets, e.g. "logo.png"; rendered as <logo.png> and
+  // referenced from html as cid:logo.png.
   optional string content_id = 4;
+
+  enum Disposition {
+    // Inline if content_id is set, else attachment.
+    DISPOSITION_AUTO = 0;
+    DISPOSITION_ATTACHMENT = 1;
+    DISPOSITION_INLINE = 2;
+  }
+  Disposition disposition = 5;
 }
 
 message MimePart {
@@ -142,7 +159,7 @@ message MailAddress {
   // will be escaped for mail-headers automatically.
   message Address {
     string name = 1;
-    string email = 2;
+    string address = 2;
   }
 }
 

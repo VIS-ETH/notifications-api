@@ -1,6 +1,10 @@
 /.git
 /.gitlab-ci.yml
-/.mockery.yml
+/.markdownlint.json
+
+# Technically should not be necessary, but is used for
+# different targets to allow testing through compose.
+#/.mockery.yml
 
 /testdata
 /configs

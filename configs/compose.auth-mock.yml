@@ -5,7 +5,8 @@ services:
   # - supports only static username/password
   auth-mock:
     build:
-      dockerfile: ./configs/auth-mock.Dockerfile
+      context: ..
+      target: auth-mock
     ports: [8081:8081]
     environment:
       LISTEN_ADDR: "auth-mock:8081"

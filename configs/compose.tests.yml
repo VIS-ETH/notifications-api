@@ -1,0 +1,8 @@
+services:
+  notifications-api-tests:
+    build:
+      context: ..
+      target: tests
+    command: ["go", "test", "./..."]
+    volumes:
+      - ../testdata:/app/testdata:ro

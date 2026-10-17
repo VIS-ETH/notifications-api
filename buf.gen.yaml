@@ -5,10 +5,10 @@ clean: true
 # The code generation is supposed to be run in this parent directory. See Makefile
 
 plugins:
-  - remote: buf.build/protocolbuffers/go:v1.36.10
+  - remote: buf.build/protocolbuffers/go:v1.36.12
     out: generated/pb
     opt: paths=source_relative
-  - remote: buf.build/grpc/go:v1.5.1
+  - remote: buf.build/grpc/go:v1.6.2
     out: generated/pb
     opt:
       - paths=source_relative
