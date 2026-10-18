@@ -61,7 +61,6 @@ func (s *MailServer) QueueMail(ctx context.Context, mailReq *pb.Mail) (*pb.Queue
 		logger.Errorf("Failing to insert mail into DB (conversion): %v", err)
 		return nil, status.Errorf(codes.Internal, "Failed to convert mail to DB format!")
 	}
-
 	err = s.querier.CreateMail(ctx, sql.CreateMailParams{
 		FromAddress:  mailSQLEntity.FromAddress,
 		ReplyTo:      mailSQLEntity.ReplyTo,
@@ -134,6 +133,7 @@ func (s *MailServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailRe
 		Subject:      mailSQLEntity.Subject,
 		Body:         mailSQLEntity.Body,
 		MessageID:    mailSQLEntity.MessageID,
+		DateHeader:   pgtype.Timestamptz{Time: sanitizedMail.Date, Valid: !sanitizedMail.Date.IsZero()},
 		Status:       sql.MailStatusSent,
 	})
 	// To avoid retry behavior by application or other things - report success as mail was actually send
@@ -180,6 +180,7 @@ func (s *MailServer) SendDryRun(ctx context.Context, mailReq *pb.Mail) (*pb.Mail
 		Subject:      mailSQLEntity.Subject,
 		Body:         mailSQLEntity.Body,
 		MessageID:    mailSQLEntity.MessageID,
+		DateHeader:   pgtype.Timestamptz{Time: sanitizedMail.Date, Valid: !sanitizedMail.Date.IsZero()},
 		Status:       sql.MailStatusSent,
 	})
 	// To avoid retry behavior by application or other things - report success as mail was actually send

@@ -190,44 +190,19 @@ An example request / usage is left here:
 cd servis
 grpcurl -plaintext -proto sip/notifications/mail.proto -d '{
   "replyTo": [
-    {
-      "mailAddress": {
-        "name": "Test ReplyTo",
-        "address": "test@vis.ethz.ch"
-      }
-    }
+    { "mailAddress": { "name": "Test ReplyTo", "address": "test@vis.ethz.ch" } }
   ],
   "to": [
-    {
-      "mailAddress": {
-        "name": "User1",
-        "address": "test-user-1@vis.ethz.ch"
-      }
-    }
+    { "mailAddress": { "name": "User1", "address": "test-user-1@vis.ethz.ch" } }
   ],
   "cc": [
-    {
-      "mailAddress": {
-        "name": "User1",
-        "address": "test-user-1@math.ethz.ch"
-      }
-    },
-    {
-      "mailAddress": {
-        "name": "User2",
-        "address": "test-user-2@inf.ethz.ch"
-      }
-    }
+    { "mailAddress": { "name": "User1", "address": "test-user-1@math.ethz.ch" } },
+    { "mailAddress": { "name": "User2", "address": "test-user-2@inf.ethz.ch" } }
   ],
   "bcc": [
-    {
-      "mailAddress": {
-        "name": "Secret User",
-        "address": "secret@ethz.ch"
-      }
-    }
+    { "mailAddress": { "name": "Secret User", "address": "secret@ethz.ch" } }
   ],
-  "extraHeader": [],
+  "extraHeaders": [],
   "from": {
     "mailAddress": {
       "name": "Test Sender",
