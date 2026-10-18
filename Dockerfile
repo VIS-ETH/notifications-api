@@ -53,3 +53,5 @@ COPY sql/migrations /sql/migrations
 ENV MIGRATIONS_DIR=/sql/migrations
 
 ENTRYPOINT ["/notifications-api"]
+
+CMD [ "grpc-api" ]
