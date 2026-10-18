@@ -69,7 +69,7 @@ docker compose up --build
 ## To run the observability stack, simply run the following command.
 ## This will start the container as before, but also start multiple services that allow you to setup everything locally.
 ## Most importantly, Grafana is now available on localhost:3000
-docker compose -f compose.yaml -f configs/local-observability/compose.observability.yaml up --build
+docker compose -f compose.yaml -f configs/compose.observability.yaml up --build
 
 ```
 

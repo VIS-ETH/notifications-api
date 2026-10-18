@@ -45,3 +45,12 @@ WHERE
     status = 'sent'
   AND
     processed_at - NOW() > $1::interval;
+
+-- name: CountMailsByStatus :many
+SELECT s.status::mail_status AS status, COALESCE(c.count, 0) AS count
+FROM unnest(enum_range(NULL::mail_status)) AS s(status)
+LEFT JOIN (
+    SELECT status, COUNT(*) AS count
+    FROM mails
+    GROUP BY status
+) c ON c.status = s.status;
