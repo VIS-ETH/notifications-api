@@ -7,6 +7,7 @@ import (
 	"net/mail"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
 	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/pb/sip/notifications"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/sql"
@@ -21,6 +22,8 @@ import (
 const (
 	MessageIDLoggerField = "message-id"
 	RPCMethodLoggerField = "rpc-method"
+
+	MaxMailSizeBytes = 2 * 1024 * 1024 // 2 MB
 )
 
 func (s *MailServer) QueueMail(ctx context.Context, mailReq *pb.Mail) (*pb.QueueResponse, error) {
@@ -38,9 +41,16 @@ func (s *MailServer) QueueMail(ctx context.Context, mailReq *pb.Mail) (*pb.Queue
 		mailResponse := &pb.MailResponse{
 			MailId: sanitizedMail.MessageID,
 		}
+
 		logger.Infof("Logging-only mode: requested to send mail %+v", sanitizedMail)
 		logger.Infof("Logging-only mode: return successful response to %+v", mailResponse)
-		logger.Tracef("Logging-only mode: full message content: %s", sanitizedMail.GetMessageContent())
+
+		imf, err := sanitizedMail.GetInternetMessageFormat(true)
+		if err != nil {
+			s.logger.Errorf("Failed to get internet message format for logging: %v", err)
+			return nil, status.Errorf(codes.Internal, "Failed to get internet message format for logging")
+		}
+		logger.Tracef("Logging-only mode: full message content: %q", imf)
 		return &pb.QueueResponse{
 			MailId: sanitizedMail.MessageID,
 		}, nil
@@ -63,6 +73,7 @@ func (s *MailServer) QueueMail(ctx context.Context, mailReq *pb.Mail) (*pb.Queue
 		Body:         mailSQLEntity.Body,
 		MessageID:    mailSQLEntity.MessageID,
 		Status:       sql.MailStatusSubmitted,
+		DateHeader:   pgtype.Timestamptz{Time: sanitizedMail.Date, Valid: !sanitizedMail.Date.IsZero()},
 	})
 	if err != nil {
 		logger.Errorf("Failed to insert mail into queue: %v", err)
@@ -88,9 +99,16 @@ func (s *MailServer) SendMail(ctx context.Context, mailReq *pb.Mail) (*pb.MailRe
 		mailResponse := &pb.MailResponse{
 			MailId: sanitizedMail.MessageID,
 		}
+
 		logger.Infof("Logging-only mode: requested to send mail %+v", sanitizedMail)
 		logger.Infof("Logging-only mode: return successful response to %+v", mailResponse)
-		logger.Tracef("Logging-only mode: full message content: %s", sanitizedMail.GetMessageContent())
+
+		imf, err := sanitizedMail.GetInternetMessageFormat(true)
+		if err != nil {
+			s.logger.Errorf("Failed to get internet message format for logging: %v", err)
+			return nil, status.Errorf(codes.Internal, "Failed to get internet message format for logging")
+		}
+		logger.Tracef("Logging-only mode: full message content: %q", imf)
 		return mailResponse, nil
 	}
 
@@ -218,15 +236,15 @@ func (s *MailServer) preprocessIncomingMailRequest(ctx context.Context, mailReq 
 		sender = s.mailSender.GetSender(desiredSender)
 	}
 
-	sanitizedMail, err := pbMailToSanitizedMail(mailReq, sender)
+	validatedMail, err := pbMailToValidatedMail(mailReq, sender)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Provided message was invalid: %v", err)
 	}
 
 	logger.Tracef("Setting message ID")
-	sanitizedMail.MessageID = messageID
+	validatedMail.MessageID = messageID
 
-	err = s.checkSendPermission(claims, sanitizedMail)
+	err = s.checkSendPermission(claims, mailReq, validatedMail)
 	if err != nil {
 		if s.unauthenticated {
 			logger.Debugf("Unauthenticated mode: some values are not permitted... %v", err)
@@ -235,130 +253,42 @@ func (s *MailServer) preprocessIncomingMailRequest(ctx context.Context, mailReq 
 		}
 	}
 
-	return sanitizedMail, nil
+	return validatedMail, nil
 }
 
-func (s *MailServer) checkSendPermission(claims *auth.CustomClaims, message *mailer.Mail) error {
+func (s *MailServer) checkSendPermission(claims *auth.CustomClaims, mailReq *pb.Mail, message *mailer.Mail) error {
 	var permErrors []error
 
 	if !claims.CanMail() {
 		permErrors = append(permErrors, errors.New("not allowed to send mails via Notifications API"))
 	}
 
-	isSenderAllowed := claims.IsSenderAllowed(&message.From.Address)
-
-	if !isSenderAllowed {
+	// perform check on filled-in defaults
+	if !claims.IsSenderAllowed(message.From.Address) {
 		permErrors = append(permErrors, fmt.Errorf("not allowed to send from address: %s", message.From.Address))
 	}
 
-	// if len(message.To) > 500 {
+	// perform check only on request
+	for _, header := range mailReq.ExtraHeaders {
+		if header == nil {
+			permErrors = append(permErrors, fmt.Errorf("extra header was nil"))
+			continue
+		}
 
-	//}
+		if !claims.IsHeaderAllowed(header.Key) {
+			permErrors = append(permErrors, fmt.Errorf("not allowed to set extra header: %s", header.Key))
+		}
+	}
+
+	// check size of mail request
+	msgContent, err := message.GetInternetMessageFormat(false)
+	if err != nil {
+		return fmt.Errorf("failed to get internet message format for size check: %v", err)
+	}
+	if len(msgContent) > MaxMailSizeBytes {
+		permErrors = append(permErrors, fmt.Errorf(
+			"mail size exceeds maximum allowed size of %d bytes: %d bytes", MaxMailSizeBytes, len(msgContent)))
+	}
+
 	return errors.Join(permErrors...)
-}
-
-func pbMailToSanitizedMail(mailReq *pb.Mail, from mail.Address) (*mailer.Mail, error) {
-	mailReq.From = &pb.MailAddress{
-		Address: &pb.MailAddress_MailAddress{
-			MailAddress: &pb.MailAddress_Address{
-				Name:    from.Name,
-				Address: from.Address,
-			},
-		},
-	}
-
-	fromAddr, err := transformAddressFormatsToPlainAddress(mailReq.From)
-	if err != nil {
-		return nil, fmt.Errorf("sender address could not be converted and sanitized: %v", err)
-	}
-
-	transformedReplyToAddresses, err := transformAddressLists(mailReq.ReplyTo)
-	if err != nil {
-		return nil, fmt.Errorf("could not convert 'reply-to' address list: %v", err)
-	}
-
-	transformedToAddresses, err := transformAddressLists(mailReq.To)
-	if err != nil {
-		return nil, fmt.Errorf("could not convert 'to' address list: %v", err)
-	}
-	transformedCcAddresses, err := transformAddressLists(mailReq.Cc)
-	if err != nil {
-		return nil, fmt.Errorf("could not convert 'cc' address list: %v", err)
-	}
-	transformedBccAddresses, err := transformAddressLists(mailReq.Bcc)
-	if err != nil {
-		return nil, fmt.Errorf("could not convert 'bcc' address list: %v", err)
-	}
-
-	if len(mailReq.ExtraHeader) > 0 {
-		return nil, errors.New("extra_header not yet supported")
-	}
-
-	var bodyContent string
-	var extraHeaders map[string][]string
-
-	switch body := mailReq.BodyOneof.(type) {
-	case *pb.Mail_PlainText:
-		bodyContent = body.PlainText
-	case *pb.Mail_MultipartBody:
-		// extraHeaders["Content-Type"] = []string{"multipart"}
-		return nil, errors.New("multipart mail not supported")
-	}
-
-	return &mailer.Mail{
-		From:         fromAddr,
-		ReplyTo:      transformedReplyToAddresses,
-		To:           transformedToAddresses,
-		Cc:           transformedCcAddresses,
-		Bcc:          transformedBccAddresses,
-		ExtraHeaders: extraHeaders,
-		Subject:      mailReq.Subject,
-		Body:         bodyContent,
-	}, nil
-}
-
-func transformAddressLists(addresses []*pb.MailAddress) ([]*mail.Address, error) {
-	var addressList []*mail.Address
-	for i, addr := range addresses {
-		transformedAddr, err := transformAddressFormatsToPlainAddress(addr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to transform address %d (%s) in address list", i, addr)
-		}
-		addressList = append(addressList, transformedAddr)
-	}
-	return addressList, nil
-}
-
-func transformAddressFormatsToPlainAddress(addr *pb.MailAddress) (*mail.Address, error) {
-	if addr == nil {
-		return nil, errors.New("mail address was nil")
-	}
-	switch addr := addr.Address.(type) {
-	case *pb.MailAddress_MailAddress:
-		// Sanitization:
-		// - Check that address itself is valid
-		// - Check that as a whole, it is also still valid
-		parsedAddress, err := mail.ParseAddress(addr.MailAddress.Address)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse address itself of %s: %v", addr.MailAddress.Address, err)
-		}
-		if parsedAddress.Address != addr.MailAddress.Address {
-			return nil, fmt.Errorf(
-				"parsed plain address differred from supposed-to-be-plain address: '%s' vs '%s'",
-				parsedAddress.Address, addr.MailAddress.Address,
-			)
-		}
-		stdMailAddr := mail.Address{
-			Name:    addr.MailAddress.Name,
-			Address: addr.MailAddress.Address,
-		}
-		if _, err := mail.ParseAddress(stdMailAddr.String()); err != nil {
-			return nil, fmt.Errorf("a funny sanity check failed... %v", err)
-		}
-		return &stdMailAddr, nil
-	case *pb.MailAddress_VsethUserId:
-		return nil, fmt.Errorf("VSETH user id as mail address not yet supported")
-	default:
-		return nil, fmt.Errorf("proto mail address could not be converted")
-	}
 }

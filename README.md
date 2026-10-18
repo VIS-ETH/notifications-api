@@ -56,6 +56,9 @@ The Notifications API implements a few things beyond the bare minimum for a Go p
 Building and compiling the project should be straightforward.
 The Dockerfile itself of course builds the entire project from scratch, which should be very stable.
 If you do not want Docker, but rather want it locally, we try to provide a few ways to compile it easily.
+
+### Docker, docker compose
+
 The following commands should help you get started
 
 ```bash
@@ -66,7 +69,13 @@ docker compose up --build
 ## To run the observability stack, simply run the following command.
 ## This will start the container as before, but also start multiple services that allow you to setup everything locally.
 ## Most importantly, Grafana is now available on localhost:3000
-docker compose -f compose.yaml -f configs/local-observability/compose.observability.yaml up --build
+docker compose -f compose.yaml -f configs/compose.observability.yaml up --build
+
+```
+
+### Run and build locally
+
+```bash
 
 
 # Build locally
@@ -86,7 +95,26 @@ go run cmd/bundled/bundled.go grpc-api
 go run cmd/bundled/bundled.go grpc-api --logging-only=false --grpc-unauthenticated --log-level trace
 ```
 
-## Observability  showcase infrastructure
+### Test suite
+
+The project comes with a test-suite, that goes as far as setting up SMTP servers, gRPC servers, fake auth servers and so on.
+Some components are tested end-to-end and checked for expected results.
+Feel free to extend the test suite further, especially if you want to rely on a certain behavior of the servers.
+
+```bash
+# Run the test suite locally
+go test ./...
+
+# Run specific directories as test
+go test pkg/mailer
+
+# Run test suite in docker compose
+docker compose -f configs/compose.tests.yml up --build
+# Or run interactively, then use commands above.
+docker compose -f configs/compose.tests.yml run --build --rm -it --entrypoint /bin/sh notifications-api-tests
+```
+
+## Observability showcase infrastructure
 
 > [!tip]
 > To get a small feel for what we mean by observability, we encourage you to read our [observability docs](https://wiki.vseth.ethz.ch/x/KQCiL).
@@ -101,7 +129,7 @@ The commands to run everything are in the relevant building and running section,
 - Prometheus for storing metrics. It receives data from Tempo and Alloy and can scrape applications (collect metrics) by itself.
 - Alloy exposes OTEL collector compatible endpoints and is essentially a swiss army knife for moving data between applications and services. Here, it simply pushes the relevant data to Tempo, Prometheus etc.
 - Tempo as database to store traces.
-It receives data from the OTEL interface (either directly or, like here, through Alloy), and also generates and pushes metrics to Prometheus.
+  It receives data from the OTEL interface (either directly or, like here, through Alloy), and also generates and pushes metrics to Prometheus.
 
 ### Browsing the stack
 
@@ -210,6 +238,34 @@ grpcurl -plaintext -proto sip/notifications/mail.proto -d '{
   "plainText": "Hey student,\n\nAbort mission and return back to studies...\n\nPlease....\n\n\n\n\nWarm regards,\nYour predecessors"
 }' localhost:6781 sip.notifications.MailService/SendMail
 ```
+
+### Test with authentication
+
+In order to also test authentication, there is a tiny CLI that can act as a mock auth server.
+It is simple enough to just hardcode potential credentials and clients, along with any roles and permissions necessary for the current tests.
+The entire setup can once again be started with docker compose as described below
+This rewires all services to now use authentication (for the smtp-proxy, and the grpc api).
+You can fetch a token to pass along your requests also with the command below:
+
+```bash
+docker compose -f compose.yaml -f configs/compose.auth-mock.yaml up --build
+
+# Fetch a token that can be used as bearer token for the gRPC API request
+# Include as header "Authorization: Bearer <token>"
+# For SMTP-proxy, just send username/password as normal plain auth, the proxy
+# will handle OIDC flows - as it is more compatible with most apps and OAUTH in
+# mail is pain.
+
+# mind the no new line with echo -n!
+BASIC_TOKEN="$(echo -n "test-usernam3:test-passw0rd" | base64)"
+curl "http://localhost:8081/token" -H "Authorization: Basic $BASIC_TOKEN" -s \
+  | jq -r '.access_token' # extract the access_token key in the resulting JSON
+```
+
+If a more flexible solution is required for more extensive testing, try a keycloak server.
+For now, `keycloak-fake.vis.ethz.ch` has public admin credentials, contains fake user info and is safe for developers to reconfigure and use.
+Just adjust the appropriate values in `configs/compose.auth-mock.yml` and reconfigure the fake data repo that populates Keycloak.
+This small fake auth server is more handy and hands-on, with no further magic behind the scenes.
 
 ## Protocols / Available API references
 

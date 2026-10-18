@@ -13,7 +13,7 @@ formatter-options:
     tab-indent: true
     tab-width: 8
 generate: true
-include-auto-generated: false
+include-auto-generated: true
 log-level: info
 structname: "{{.Mock}}{{.InterfaceName}}"
 pkgname: "mockery_{{.SrcPackageName}}"
@@ -21,6 +21,9 @@ recursive: true
 require-template-schema-exists: true
 template: testify
 template-schema: "{{.Template}}.schema.json"
+exclude-subpkg-regex:
+  - "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/testutil.*"
+  - "gitlab.ethz.ch/.../notifications-api/generated/mockery.*" # no recursive walk... settings explicit below!
 packages:
   gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api:
     config:

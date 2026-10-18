@@ -1,6 +1,8 @@
 package config
 
 import (
+	"strings"
+
 	"github.com/spf13/pflag"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal"
 )
@@ -8,9 +10,10 @@ import (
 type SMTPProxyConfig struct {
 	CommonConfig *CommonConfig
 
-	GrpcClientAuthMode string
-	GrpcServerAddress  string
-	GrpcServerInsecure bool
+	GrpcClientAuthMode   string
+	GrpcClientUseQueuing bool
+	GrpcServerAddress    string
+	GrpcServerInsecure   bool
 
 	SMTPServerAuth              string
 	SMTPServerTLS               bool
@@ -25,6 +28,12 @@ type SMTPProxyConfig struct {
 func RegisterSMTPProxy(fs *pflag.FlagSet, c *SMTPProxyConfig, commonConfig *CommonConfig) {
 	c.CommonConfig = commonConfig
 
+	fs.BoolVar(
+		&c.GrpcClientUseQueuing,
+		"grpc-client-use-queuing",
+		strings.ToLower(internal.EnvOrDefault("GRPC_CLIENT_USE_QUEUING", "true")) != "false",
+		"Whether to forward mails via immediate-send or a queuing RPC to the server",
+	)
 	fs.StringVar(
 		&c.GrpcClientAuthMode,
 		"grpc-client-auth",

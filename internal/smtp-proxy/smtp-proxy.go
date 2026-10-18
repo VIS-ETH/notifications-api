@@ -45,6 +45,7 @@ type SMTPProxyConfig struct {
 	OidcConfig           *OIDCConfig
 	TokenProviderOptions []auth.OidcTokenProviderOption
 	LoggingOnly          bool
+	UseQueuing           bool
 	logger               *logrus.Entry
 }
 
@@ -77,41 +78,9 @@ func GetSMTPServer(config SMTPProxyConfig, client pb.MailServiceClient) (*smtp.S
 	mailHandler := func(ctx context.Context, mail *mailer.Mail) error {
 		config.logger.Debugf("Received mail to send via gRPC: Subject=%s, From=%s, To=%v", mail.Subject, mail.From.Address, mail.To)
 
-		to := make([]*pb.MailAddress, len(mail.To))
-		for i, addr := range mail.To {
-			to[i] = mailer.MakePbAddress(addr.Name, addr.Address)
-		}
-		cc := make([]*pb.MailAddress, len(mail.Cc))
-		for i, addr := range mail.Cc {
-			cc[i] = mailer.MakePbAddress(addr.Name, addr.Address)
-		}
-		bcc := make([]*pb.MailAddress, len(mail.Bcc))
-		for i, addr := range mail.Bcc {
-			bcc[i] = mailer.MakePbAddress(addr.Name, addr.Address)
-		}
-		replyTo := make([]*pb.MailAddress, len(mail.ReplyTo))
-		for i, addr := range mail.ReplyTo {
-			replyTo[i] = mailer.MakePbAddress(addr.Name, addr.Address)
-		}
-
-		var extraHeaders []*pb.ExtraHeader
-		for k, vs := range mail.ExtraHeaders {
-			for _, v := range vs {
-				extraHeaders = append(extraHeaders, &pb.ExtraHeader{Key: k, Value: v})
-			}
-		}
-
-		pbMail := &pb.Mail{
-			Subject:     mail.Subject,
-			From:        mailer.MakePbAddress(mail.From.Name, mail.From.Address),
-			To:          to,
-			Cc:          cc,
-			Bcc:         bcc,
-			ReplyTo:     replyTo,
-			ExtraHeader: extraHeaders,
-			BodyOneof: &pb.Mail_PlainText{
-				PlainText: mail.Body,
-			},
+		pbMail, err := buildGrpcRequestFromMail(mail)
+		if err != nil {
+			return fmt.Errorf("failed to convert mail to gRPC request: %v", err)
 		}
 		config.logger.Tracef("Converted mail to gRPC format: %+v", pbMail)
 
@@ -173,12 +142,21 @@ func GetSMTPServer(config SMTPProxyConfig, client pb.MailServiceClient) (*smtp.S
 			config.logger.Debugf("Dry run successful, sender address accepted by SMTP server: %s", respAddr.Address)
 		}
 
-		resp, err := client.SendMail(authedCtx, pbMail)
-		if err != nil {
-			config.logger.Errorf("Failed to send mail via gRPC: %v", err)
-			return fmt.Errorf("failed to send mail via gRPC: %v", err)
+		if config.UseQueuing {
+			resp, err := client.QueueMail(authedCtx, pbMail)
+			if err != nil {
+				config.logger.Errorf("Failed to queue mail via gRPC: %v", err)
+				return fmt.Errorf("failed to queue mail via gRPC: %v", err)
+			}
+			config.logger.Infof("Mail queued successfully via gRPC, message ID: %s", resp.MailId)
+		} else {
+			resp, err := client.SendMail(authedCtx, pbMail)
+			if err != nil {
+				config.logger.Errorf("Failed to send mail via gRPC: %v", err)
+				return fmt.Errorf("failed to send mail via gRPC: %v", err)
+			}
+			config.logger.Infof("Mail sent successfully via gRPC, message ID: %s", resp.MailId)
 		}
-		config.logger.Infof("Mail sent successfully via gRPC, message ID: %s", resp.MailId)
 
 		return nil
 	}

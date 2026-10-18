@@ -1,0 +1,16 @@
+services:
+  codegen:
+    build:
+      context: ..
+      target: codegen
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        set -euo pipefail
+
+        rm -rf /generated/*
+
+        cp -R /app/generated /
+    volumes:
+      - ../generated/:/generated

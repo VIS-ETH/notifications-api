@@ -1,4 +1,4 @@
-package internal
+package dispatcher
 
 import (
 	"context"
@@ -30,6 +30,12 @@ var (
 // HandleMailQueue continuously watches the database (every minute) and
 // tries to send any remaining mail (according to rate limit rules etc.)
 func HandleMailQueue(ctx context.Context, mailSender mailer.MailSender, queries *sql.Queries) error {
+	d, err := initializeQueueObservability(queries)
+	if err != nil {
+		return fmt.Errorf("failed to initialize queue observability: %v", err)
+	}
+	defer func() { _ = d.Close() }()
+
 	logger := logrus.WithFields(logrus.Fields{
 		"component": "queue-handler",
 	})
@@ -37,7 +43,7 @@ func HandleMailQueue(ctx context.Context, mailSender mailer.MailSender, queries 
 
 	for {
 		for {
-			empty, err := popAndHandleMail(ctx, logger, queries, mailSender)
+			empty, err := popAndHandleMail(ctx, logger, queries, mailSender, d)
 			if err != nil {
 				logger.Errorf("Failed to handle mail: %v", err)
 				break
@@ -54,7 +60,7 @@ func HandleMailQueue(ctx context.Context, mailSender mailer.MailSender, queries 
 	}
 }
 
-func popAndHandleMail(ctx context.Context, logger *logrus.Entry, queries *sql.Queries, mailSender mailer.MailSender) (bool, error) {
+func popAndHandleMail(ctx context.Context, logger *logrus.Entry, queries *sql.Queries, mailSender mailer.MailSender, d *DispatcherObservability) (bool, error) {
 	poppedMails, err := queries.PopMailForProcessing(ctx, pgtype.Interval{
 		Microseconds: retryFailedIntervalMicroseconds,
 	})
@@ -87,16 +93,22 @@ func popAndHandleMail(ctx context.Context, logger *logrus.Entry, queries *sql.Qu
 			Status: status,
 		}))
 		if err != nil {
+			span.RecordError(err)
 			logger.Errorf("error in defer: %v", err)
 		}
+		d.RecordAttempt(ctx, status)
 	}()
 
 	queuedMail, err := database.DBEntityToMail(poppedMail)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to convert mail entity")
 		return false, fmt.Errorf("failed to convert mail back from SQL entity: %v", err)
 	}
 	err = mailSender.TransmitMail(ctx, queuedMail)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to transmit mail")
 		return false, fmt.Errorf("failed to transmit mail, marking as failed: %v", err)
 	}
 	status = sql.MailStatusSent

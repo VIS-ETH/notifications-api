@@ -1,4 +1,4 @@
-package tests_test
+package mock
 
 import (
 	"crypto/rand"
@@ -7,38 +7,88 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/sirupsen/logrus"
 )
 
-const (
-	TestAuthServerJWKSPath  = "/jwks"
-	TestAuthServerTokenPath = "/token"
+type ListenFunc func() error
 
-	TestAuthUsername = "test-usernam3"
-	TestAuthPassword = "test-passw0rd"
-	TestAuthSub      = "test-5ub"
+const (
+	AuthMockServerJWKSPath  = "/jwks"
+	AuthMockServerTokenPath = "/token"
+
+	AuthMockUserUsername = "test-usernam3"
+	AuthMockUserPassword = "test-passw0rd"
+	AuthMockUserSub      = "test-5ub"
+
+	AuthMockClientID = "test-client-id"
 )
 
-func GetAuthServer(username, password string) (*httptest.Server, error) {
+type AuthMockServerHandle struct {
+	handler    http.Handler
+	privateKey *rsa.PrivateKey
+	logger     *logrus.Entry
+	issuerURL  string
+}
+
+func (h *AuthMockServerHandle) URL() string {
+	return h.issuerURL
+}
+
+func (a *AuthMockServerHandle) StartHttpTestServer(t *testing.T) (*httptest.Server, error) {
+	if url := a.issuerURL; url != "" {
+		return nil, fmt.Errorf("mock server already started at %s", url)
+	}
+	srv := httptest.NewTestServer(t, a.handler)
+	srv.Start()
+	a.issuerURL = srv.URL
+	return srv, nil
+}
+
+func (a *AuthMockServerHandle) StartHttpMockServer(addr, issuerURL string) (ListenFunc, error) {
+	if url := a.issuerURL; url != "" {
+		return nil, fmt.Errorf("mock server already started at %s", url)
+	}
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: a.handler,
+	}
+
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to listen on %s: %v", addr, err)
+	}
+	a.issuerURL = issuerURL
+
+	return func() error {
+		return srv.Serve(l)
+	}, nil
+}
+
+func NewAuthMockServerHandle(username, password string) (*AuthMockServerHandle, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to generate a secure random key for the auth jwt testing server: %v", err)
+		return nil, fmt.Errorf("failed to generate a secure random key for the auth jwt testing server: %v", err)
 	}
 	publicKey := &privateKey.PublicKey
-
-	var authServer *httptest.Server
 
 	logger := logrus.WithFields(logrus.Fields{
 		"component": "auth-mock-server",
 	})
 
-	authServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handle := &AuthMockServerHandle{
+		logger:     logger,
+		privateKey: privateKey,
+	}
+
+	httpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/jwks":
 			jwks := map[string]any{
@@ -90,13 +140,12 @@ func GetAuthServer(username, password string) (*httptest.Server, error) {
 				}
 				break
 			}
-			// Create a valid JWT using the exact same private key
 			token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-				"sub": "test-sub",
-				"iss": authServer.URL,
-				"aud": TestClientID,
+				"sub": AuthMockUserSub,
+				"iss": handle.issuerURL,
+				"aud": AuthMockClientID,
 				"resource_access": map[string]map[string][]string{
-					TestClientID: {
+					AuthMockClientID: {
 						"roles": {
 							"mail",
 							"mail-sender:test-from@local",
@@ -113,7 +162,6 @@ func GetAuthServer(username, password string) (*httptest.Server, error) {
 				return
 			}
 
-			// Return the standard OAuth2 token response
 			w.Header().Set("Content-Type", "application/json")
 			err = json.NewEncoder(w).Encode(map[string]any{
 				"access_token": signedToken,
@@ -128,7 +176,9 @@ func GetAuthServer(username, password string) (*httptest.Server, error) {
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
-	}))
+	})
 
-	return authServer, nil
+	handle.handler = httpHandler
+
+	return handle, nil
 }

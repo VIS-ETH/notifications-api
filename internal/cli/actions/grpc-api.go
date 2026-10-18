@@ -14,10 +14,10 @@ import (
 	"github.com/sirupsen/logrus"
 	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/pb/sip/notifications"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/sql"
-	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/cli/config"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/database"
+	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/dispatcher"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/grpcservers"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/slack"
@@ -127,10 +127,10 @@ func HandleNotificationsAPI(ctx context.Context, c *config.APIConfig) error {
 
 	if !c.CommonConfig.LoggingOnly {
 		eg.Go(func() error {
-			return internal.HandleMailQueue(ctx, mailSender, queries)
+			return dispatcher.HandleMailQueue(ctx, mailSender, queries)
 		})
 		eg.Go(func() error {
-			return internal.DeleteOldMails(ctx, queries)
+			return dispatcher.DeleteOldMails(ctx, queries)
 		})
 	}
 

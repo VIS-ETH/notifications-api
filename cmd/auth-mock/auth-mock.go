@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal"
-	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth"
+	authmock "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/auth/mock"
 )
 
 func main() {
@@ -20,15 +20,12 @@ func main() {
 		internal.EnvOrDefault("ISSUER_URL", "localhost:8081"),
 		"issuer URL for the mock auth server",
 	)
-	handle, err := auth.NewAuthMockServerHandle(auth.AuthMockUserUsername, auth.AuthMockUserPassword)
+	handle, err := authmock.NewAuthMockServerHandle(authmock.AuthMockUserUsername, authmock.AuthMockUserPassword)
 	if err != nil {
 		log.Fatalf("Failed to start mock auth server: %v", err)
 	}
 
-	srvListen, err := auth.StartHttpMockServer(
-		*addrFlag,
-		*issuerURLFlag,
-		handle)
+	srvListen, err := handle.StartHttpMockServer(*addrFlag, *issuerURLFlag)
 	if err != nil {
 		log.Fatalf("Failed to start mock auth server: %v", err)
 	}

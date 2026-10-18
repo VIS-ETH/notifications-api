@@ -1,24 +1,22 @@
 .PHONY: all
-all: build
+all: build test
 
 .PHONY: build
 build: codegen
 	go build cmd/notifications-api/notifications-server.go
 
+.PHONY: test test-coverage
+test: codegen
+	go test ./...
+
+test-coverage: codegen
+	go test -coverpkg=./... -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out
+
 .PHONY: codegen
 ifeq ($(docker), true)
 codegen: clean
-	# Build a docker image with all dependencies generated...
-	docker build . \
-		--target builder \
-		-t notifications-api-codegen
-	
-	# And copy over the files from there onto our host
-	docker run \
-		--entrypoint /bin/sh \
-	  -v ./generated:/generated \
-	  notifications-api-codegen \
-		-c 'cp -R /app/generated /'
+	docker compose -f configs/compose.codegen.yml up --build
 else
 codegen: clean generate-protos generate-sqlc generate-mockery
 endif

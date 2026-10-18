@@ -15,7 +15,7 @@ UPDATE mails m
 SET status = 'processing', processed_at = NOW()
 FROM next_mail nm
 WHERE nm.id = m.id
-RETURNING *;
+RETURNING m.*;
 
 -- name: SetMailStatus :exec
 UPDATE mails
@@ -34,9 +34,10 @@ INSERT INTO mails (
   subject,
   body,
   message_id,
-  status
+  status,
+  date_header
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 );
 
 -- name: DeleteOldMails :exec
@@ -45,3 +46,12 @@ WHERE
     status = 'sent'
   AND
     processed_at - NOW() > $1::interval;
+
+-- name: CountMailsByStatus :many
+SELECT s.status::mail_status AS status, COALESCE(c.count, 0) AS count
+FROM unnest(enum_range(NULL::mail_status)) AS s(status)
+LEFT JOIN (
+    SELECT status, COUNT(*) AS count
+    FROM mails
+    GROUP BY status
+) c ON c.status = s.status;

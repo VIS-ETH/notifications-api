@@ -17,7 +17,7 @@ func getMailObservability() (*MailObservability, error) {
 	if mo != nil {
 		return mo, nil
 	}
-	meter := otel.Meter("mailer-meter")
+	meter := otel.Meter("pkg/mailer")
 	counter, err := meter.Int64Counter(
 		"mail_sender_total_mail_count",
 		metric.WithDescription("Total mails sent by mailer"),
