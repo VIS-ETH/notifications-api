@@ -26,6 +26,7 @@ var reservedHeaders = map[string]struct{}{
 	"Content-Type": {},
 }
 
+//mockery:generate: true
 type MailSender interface {
 	GetSender(address mail.Address) mail.Address
 	MessageIDSuffix() string
