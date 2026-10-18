@@ -7,6 +7,7 @@ import (
 	"net/mail"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
 	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/pb/sip/notifications"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/sql"
@@ -72,6 +73,7 @@ func (s *MailServer) QueueMail(ctx context.Context, mailReq *pb.Mail) (*pb.Queue
 		Body:         mailSQLEntity.Body,
 		MessageID:    mailSQLEntity.MessageID,
 		Status:       sql.MailStatusSubmitted,
+		DateHeader:   pgtype.Timestamptz{Time: sanitizedMail.Date, Valid: !sanitizedMail.Date.IsZero()},
 	})
 	if err != nil {
 		logger.Errorf("Failed to insert mail into queue: %v", err)
@@ -234,15 +236,15 @@ func (s *MailServer) preprocessIncomingMailRequest(ctx context.Context, mailReq 
 		sender = s.mailSender.GetSender(desiredSender)
 	}
 
-	sanitizedMail, err := pbMailToSanitizedMail(mailReq, sender)
+	validatedMail, err := pbMailToValidatedMail(mailReq, sender)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Provided message was invalid: %v", err)
 	}
 
 	logger.Tracef("Setting message ID")
-	sanitizedMail.MessageID = messageID
+	validatedMail.MessageID = messageID
 
-	err = s.checkSendPermission(claims, mailReq, sanitizedMail)
+	err = s.checkSendPermission(claims, mailReq, validatedMail)
 	if err != nil {
 		if s.unauthenticated {
 			logger.Debugf("Unauthenticated mode: some values are not permitted... %v", err)
@@ -251,7 +253,7 @@ func (s *MailServer) preprocessIncomingMailRequest(ctx context.Context, mailReq 
 		}
 	}
 
-	return sanitizedMail, nil
+	return validatedMail, nil
 }
 
 func (s *MailServer) checkSendPermission(claims *auth.CustomClaims, mailReq *pb.Mail, message *mailer.Mail) error {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/mail"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/sql"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
 )
@@ -35,9 +36,9 @@ func buildMailBodyDbObject(p mailer.Part, root *partV1) error {
 	case mailer.Binary:
 		root.Data = b.Content
 	case mailer.Multipart:
-		children := make([]partV1, len(b.Children))
+		children := make([]partV1, 0, len(b.Children))
 		for _, child := range b.Children {
-			headerList := make([]headerV1, len(child.Headers))
+			headerList := make([]headerV1, 0, len(child.Headers))
 			for _, h := range child.Headers {
 				headerList = append(headerList, headerV1{Key: h.Key, Value: h.Value})
 			}
@@ -65,13 +66,13 @@ func reconstructMailBodyFromDbObject(root partV1) (mailer.Part, error) {
 	var p mailer.Part
 
 	if hasChildren {
-		childParts := make([]mailer.Child, len(root.Children))
+		childParts := make([]mailer.Child, 0, len(root.Children))
 		for _, child := range root.Children {
 			p, err := reconstructMailBodyFromDbObject(child)
 			if err != nil {
 				return nil, fmt.Errorf("failed to reconstruct child part: %v", err)
 			}
-			headerList := make([]mailer.Header, len(child.Headers))
+			headerList := make([]mailer.Header, 0, len(child.Headers))
 			for _, h := range child.Headers {
 				headerList = append(headerList, mailer.Header{Key: h.Key, Value: h.Value})
 			}
@@ -138,12 +139,13 @@ func MailToDBEntity(m *mailer.Mail) (*sql.Mail, error) {
 		CcAddresses:  toAddressList(m.Cc),
 		BccAddresses: toAddressList(m.Bcc),
 		ExtraHeaders: headersEnc,
+		DateHeader:   pgtype.Timestamptz{Time: m.Date, Valid: true},
 		MessageID:    m.MessageID,
 		Body:         bodyBytes,
 	}, nil
 }
 
-func DBEntityToMail(row sql.PopMailForProcessingRow) (*mailer.Mail, error) {
+func DBEntityToMail(row sql.Mail) (*mailer.Mail, error) {
 	fromAddressList := func(addresses []string) ([]mail.Address, error) {
 		var outList []mail.Address
 		for _, address := range addresses {
@@ -206,6 +208,7 @@ func DBEntityToMail(row sql.PopMailForProcessingRow) (*mailer.Mail, error) {
 		Cc:          parsedCc,
 		Bcc:         parsedBcc,
 		Headers:     mailerHeaders,
+		Date:        row.DateHeader.Time,
 		Subject:     *row.Subject,
 		MessageID:   row.MessageID,
 		ContentType: root.Root.ContentType,

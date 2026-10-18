@@ -63,6 +63,7 @@ func HandleSMTPProxy(c *config.SMTPProxyConfig) error {
 	client := pb.NewMailServiceClient(clientConn)
 
 	smtpProxyConfig := smtpproxy.SMTPProxyConfig{
+		UseQueuing:       c.GrpcClientUseQueuing,
 		SMTPAuthMode:     parsedSMTPAuthMode,
 		SMTPEnsureSender: false,
 		GrpcAuthMode:     parsedGrpcAuthMode,

@@ -15,7 +15,7 @@ UPDATE mails m
 SET status = 'processing', processed_at = NOW()
 FROM next_mail nm
 WHERE nm.id = m.id
-RETURNING *;
+RETURNING m.*;
 
 -- name: SetMailStatus :exec
 UPDATE mails
@@ -34,9 +34,10 @@ INSERT INTO mails (
   subject,
   body,
   message_id,
-  status
+  status,
+  date_header
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 );
 
 -- name: DeleteOldMails :exec

@@ -1,4 +1,4 @@
-all: false
+all: true
 dir: "./generated/mockery/{{.InterfaceDirRelative}}"
 filename: mocks.go
 force-file-write: true
@@ -13,7 +13,7 @@ formatter-options:
     tab-indent: true
     tab-width: 8
 generate: true
-include-auto-generated: false
+include-auto-generated: true
 log-level: info
 structname: "{{.Mock}}{{.InterfaceName}}"
 pkgname: "mockery_{{.SrcPackageName}}"
@@ -23,13 +23,9 @@ template: testify
 template-schema: "{{.Template}}.schema.json"
 exclude-subpkg-regex:
   - "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/internal/testutil.*"
-  - "gitlab.ethz.ch/.../notifications-api/generated.*" # no recursive walk... settings explicit below!
+  - "gitlab.ethz.ch/.../notifications-api/generated/mockery.*" # no recursive walk... settings explicit below!
 packages:
   gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api:
-    config:
-      all: false
-      include-auto-generated: true
-  gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated:
     config:
       all: true
       include-auto-generated: true

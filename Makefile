@@ -1,9 +1,17 @@
 .PHONY: all
-all: build
+all: build test
 
 .PHONY: build
 build: codegen
 	go build cmd/notifications-api/notifications-server.go
+
+.PHONY: test test-coverage
+test: codegen
+	go test ./...
+
+test-coverage: codegen
+	go test -coverpkg=./... -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out
 
 .PHONY: codegen
 ifeq ($(docker), true)

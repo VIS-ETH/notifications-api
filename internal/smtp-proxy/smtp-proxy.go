@@ -45,6 +45,7 @@ type SMTPProxyConfig struct {
 	OidcConfig           *OIDCConfig
 	TokenProviderOptions []auth.OidcTokenProviderOption
 	LoggingOnly          bool
+	UseQueuing           bool
 	logger               *logrus.Entry
 }
 
@@ -141,12 +142,21 @@ func GetSMTPServer(config SMTPProxyConfig, client pb.MailServiceClient) (*smtp.S
 			config.logger.Debugf("Dry run successful, sender address accepted by SMTP server: %s", respAddr.Address)
 		}
 
-		resp, err := client.SendMail(authedCtx, pbMail)
-		if err != nil {
-			config.logger.Errorf("Failed to send mail via gRPC: %v", err)
-			return fmt.Errorf("failed to send mail via gRPC: %v", err)
+		if config.UseQueuing {
+			resp, err := client.QueueMail(authedCtx, pbMail)
+			if err != nil {
+				config.logger.Errorf("Failed to queue mail via gRPC: %v", err)
+				return fmt.Errorf("failed to queue mail via gRPC: %v", err)
+			}
+			config.logger.Infof("Mail queued successfully via gRPC, message ID: %s", resp.MailId)
+		} else {
+			resp, err := client.SendMail(authedCtx, pbMail)
+			if err != nil {
+				config.logger.Errorf("Failed to send mail via gRPC: %v", err)
+				return fmt.Errorf("failed to send mail via gRPC: %v", err)
+			}
+			config.logger.Infof("Mail sent successfully via gRPC, message ID: %s", resp.MailId)
 		}
-		config.logger.Infof("Mail sent successfully via gRPC, message ID: %s", resp.MailId)
 
 		return nil
 	}

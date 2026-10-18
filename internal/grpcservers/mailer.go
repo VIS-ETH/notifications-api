@@ -12,7 +12,7 @@ import (
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
 )
 
-func pbMailToSanitizedMail(mailReq *pb.Mail, from mail.Address) (*mailer.Mail, error) {
+func pbMailToValidatedMail(mailReq *pb.Mail, from mail.Address) (*mailer.Mail, error) {
 	mailReq.From = &pb.MailAddress{
 		Address: &pb.MailAddress_MailAddress{
 			MailAddress: &pb.MailAddress_Address{
@@ -212,7 +212,7 @@ func transformPbMimeBodyToMailerBody(mimeBody *pb.MimeBody) (mailer.Multipart, e
 	if mimeBody == nil {
 		return mailer.Multipart{}, fmt.Errorf("mime body was nil")
 	}
-	children := make([]mailer.Child, len(mimeBody.Parts))
+	children := make([]mailer.Child, 0, len(mimeBody.Parts))
 	for _, part := range mimeBody.Parts {
 		contentType := ""
 		if part.ContentType != nil {
@@ -231,7 +231,7 @@ func transformPbMimeBodyToMailerBody(mimeBody *pb.MimeBody) (mailer.Multipart, e
 		if err != nil {
 			return mailer.Multipart{}, fmt.Errorf("failed to transform child mime part: %v", err)
 		}
-		headers := make([]mailer.Header, len(part.Headers))
+		headers := make([]mailer.Header, 0, len(part.Headers))
 		for _, header := range part.Headers {
 			if header == nil {
 				return mailer.Multipart{}, fmt.Errorf("mime part header was nil")
