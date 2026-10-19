@@ -118,6 +118,13 @@ func GetSMTPServer(config SMTPProxyConfig, client pb.MailServiceClient) (*smtp.S
 
 		if config.LoggingOnly {
 			config.logger.Infof("Sending mail with %v", pbMail)
+
+			msg, err := mail.GetInternetMessageFormat(true)
+			if err != nil {
+				return fmt.Errorf("could not convert mail to internet message format: %v", err)
+			}
+			config.logger.Infof("In internet message format, looks like:%s", msg)
+
 			return nil
 		}
 

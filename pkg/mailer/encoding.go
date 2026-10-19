@@ -46,41 +46,55 @@ func estimateQuotedPrintableSize(content []byte) int {
 	return size
 }
 
-func encodeBytes(has8BitMimeSupport bool, b []byte) (string, string) {
+func contentTypeRequires7or8Bit(contentType string) bool {
+	return strings.HasPrefix(contentType, "message/") || strings.HasPrefix(contentType, "multipart/")
+}
+
+func isAcceptable7or8Bit(b []byte) (is7Bit, is8Bit bool) {
 	isValidUtf8 := utf8.Valid(b)
+	s := string(b)
 
-	if isValidUtf8 {
-		s := string(b)
-		isASCII := true
-		hasBadControls := false
-		for _, r := range s {
-			if r >= 128 {
-				isASCII = false
-			}
-			// printables (mind DEL), allowing \t, \n, \r
-			if (r < 0x20 && r != '\t' && r != '\n' && r != '\r') || r == 0x7f /* del */ {
-				hasBadControls = true
-			}
-			if !isASCII && hasBadControls {
-				break
-			}
-		}
+	if !isValidUtf8 {
+		return false, false
+	}
 
-		needSoftNewLines := false
-		for chunk := range strings.SplitSeq(s, "\r\n") {
-			if len(chunk) > 998 {
-				needSoftNewLines = true
-				break
-			}
-		}
+	isASCII := true
+	hasBadControls := false
 
-		if isASCII && !hasBadControls && !needSoftNewLines {
-			return s, "7bit"
+	for _, r := range s {
+		if r >= 128 {
+			isASCII = false
 		}
+		// printables (mind DEL), allowing \t, \n, \r
+		if (r < 0x20 && r != '\t' && r != '\n' && r != '\r') || r == 0x7f /* del */ {
+			hasBadControls = true
+		}
+		if !isASCII && hasBadControls {
+			break
+		}
+	}
+	needSoftNewLines := false
+	for chunk := range strings.SplitSeq(s, "\r\n") {
+		if len(chunk) > 998 {
+			needSoftNewLines = true
+			break
+		}
+	}
 
-		if has8BitMimeSupport && !hasBadControls && !needSoftNewLines {
-			return s, "8bit"
-		}
+	is7Bit = isASCII && !hasBadControls && !needSoftNewLines
+	is8Bit = isValidUtf8 && !hasBadControls && !needSoftNewLines
+	return
+}
+
+func encodeBytes(has8BitMimeSupport bool, b []byte) (string, string) {
+	isAcceptable7Bit, isAcceptable8Bit := isAcceptable7or8Bit(b)
+
+	if isAcceptable7Bit {
+		return string(b), "7bit"
+	}
+
+	if isAcceptable8Bit {
+		return string(b), "8bit"
 	}
 
 	estimateQuotedPrintableSize := estimateQuotedPrintableSize(b)

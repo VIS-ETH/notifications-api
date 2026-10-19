@@ -2,17 +2,24 @@ package smtpserver
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"mime"
+	"mime/multipart"
+	"mime/quotedprintable"
 	"net/mail"
+	"net/textproto"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 	"github.com/sirupsen/logrus"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
+	"golang.org/x/text/encoding/htmlindex"
 )
 
 type authHandler func(ctx context.Context, username, password string) (context.Context, error)
@@ -213,7 +220,12 @@ ccRecipientsOk:
 	parsedMail.Cc = cc
 
 	parsedMail.Subject = decodeRFC2047(message.Header.Get("Subject"))
-	parsedMail.MessageID = message.Header.Get("Message-ID")
+	if messageId := message.Header.Get("Message-ID"); messageId != "" {
+		if messageId[0] != '<' && messageId[len(messageId)-1] != '>' {
+			return fmt.Errorf("invalid message id header %q", messageId)
+		}
+		parsedMail.MessageID = messageId[1 : len(messageId)-1]
+	}
 
 	extraHeaders := make(map[string][]string)
 	for key, values := range message.Header {
@@ -222,7 +234,22 @@ ccRecipientsOk:
 		switch lower {
 		case "from", "reply-to", "to", "cc", "subject", "message-id":
 			continue
+		case "content-type", "date":
+			// handled explicitly below, too
+			continue
+		case "content-transfer-encoding":
+			// as things might be re-encoded (7bit support), needs to be decoded first.
+			continue
+		case "mime-version":
+			// mime-version header is always set to 1.0 by mailer, ignore unless explicitly set!
+			for _, v := range values {
+				if v != "1.0" {
+					goto handleHeader
+				}
+			}
+			continue
 		}
+	handleHeader:
 		var decodedValues []string
 		for _, v := range values {
 			decodedValues = append(decodedValues, decodeRFC2047(v))
@@ -246,12 +273,28 @@ ccRecipientsOk:
 	parsedMail.Bcc = bcc
 
 	parsedMail.ContentType = message.Header.Get("Content-Type")
-
-	b, err := io.ReadAll(message.Body)
+	parsedMail.Date, err = time.Parse(time.RFC1123Z, message.Header.Get("Date"))
 	if err != nil {
-		return fmt.Errorf("reading message body from %s to [%s] failed: %v", s.from, strings.Join(s.recipients, ", "), err)
+		return fmt.Errorf("parsing date header failed: %v", err)
 	}
-	parsedMail.Body = mailer.Binary{Content: b}
+
+	if message.Header.Get("Mime-Version") != "" {
+		body, err := parsePart(textproto.MIMEHeader(message.Header), message.Body)
+		if err != nil {
+			return fmt.Errorf("parsing message body from %s to [%s] failed: %v", s.from, strings.Join(s.recipients, ", "), err)
+		}
+		parsedMail.Body = body
+	} else {
+		b, err := io.ReadAll(message.Body)
+		if err != nil {
+			return fmt.Errorf("reading message body from %s to [%s] failed: %v", s.from, strings.Join(s.recipients, ", "), err)
+		}
+		parsedMail.Body = mailer.Binary{Content: b}
+	}
+
+	if err = parsedMail.ValidateMail(); err != nil {
+		return fmt.Errorf("failed to validate parsed mail: %v", err)
+	}
 
 	err = s.backend.handleMessage(s.ctx, parsedMail)
 	if err != nil {
@@ -259,6 +302,127 @@ ccRecipientsOk:
 	}
 
 	return nil
+}
+
+// In general, content-transfer-encoding is easy enough to decode/encode.
+// However, turns out that some really smart people thought it necessary to add
+// "composite" types, and created cases where the usual content-transfer-encoding
+// does _not_ apply throughout the entire message body. Hence, we need to parse
+// these things and encode/decode accordingly.
+//
+// Note: issue would be that, if a mailserver only supports 7bit, we have to re-encode
+// the message, as our own server does 8bit. Also, aesthetically pleasing end-result.
+//
+// Uhm, according to RFC 2045, only such composite types are multipart/* and message/*,
+// where multipart/* is handled recursively.
+func parsePart(header textproto.MIMEHeader, body io.Reader) (mailer.Part, error) {
+	mediaType, params, err := mime.ParseMediaType(header.Get("Content-Type"))
+	if err != nil {
+		// No or malformed Content-Type: Mime RFC default... can be used/assumed if content-type is invalid
+		mediaType, params = "text/plain", map[string]string{"charset": "us-ascii"}
+	}
+
+	decoded := decodeTransferEncoding(header.Get("Content-Transfer-Encoding"), body)
+
+	if strings.HasPrefix(mediaType, "multipart/") {
+		if cte := strings.ToLower(header.Get("Content-Transfer-Encoding")); cte != "" && cte != "7bit" && cte != "8bit" && cte != "binary" {
+			return nil, fmt.Errorf("media type %s is multipart. only 8bit, 7bit, binary allowed on multipart messages, but was %s", mediaType, cte)
+		}
+
+		boundary := params["boundary"]
+		if boundary == "" {
+			return nil, fmt.Errorf("%s part has no boundary parameter, malformed", mediaType)
+		}
+		mr := multipart.NewReader(decoded, boundary)
+		var children []mailer.Child
+		for {
+			p, err := mr.NextPart()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return nil, fmt.Errorf("reading %s part: %w", mediaType, err)
+			}
+			child, err := parseChild(p.Header, p)
+			if err != nil {
+				return nil, fmt.Errorf("parsing %s child part: %w", mediaType, err)
+			}
+			children = append(children, child)
+		}
+		return mailer.Multipart{Children: children}, nil
+	}
+
+	raw, err := io.ReadAll(decoded)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s part: %w", mediaType, err)
+	}
+
+	// try and detect proper, nice text.
+	if strings.HasPrefix(mediaType, "text/") {
+		if text := decodeText(raw, params["charset"]); utf8.ValidString(text) {
+			return mailer.Text{Content: text}, nil
+		}
+	}
+	return mailer.Binary{Content: raw}, nil
+}
+
+// parseChild builds a mailer.Child for one sub-part of a multipart entity:
+// its decoded Part plus its non-structural headers (Content-Type and
+// Content-Transfer-Encoding are excluded, since Multipart.encode sets both
+// automatically and Multipart.validate rejects an explicit Content-Type
+// among Headers).
+func parseChild(header textproto.MIMEHeader, body io.Reader) (mailer.Child, error) {
+	part, err := parsePart(header, body)
+	if err != nil {
+		return mailer.Child{}, err
+	}
+
+	var headers []mailer.Header
+	for key, values := range header {
+		switch textproto.CanonicalMIMEHeaderKey(key) {
+		case "Content-Type", "Content-Transfer-Encoding":
+			continue
+		}
+		for _, v := range values {
+			headers = append(headers, mailer.Header{Key: key, Value: decodeRFC2047(v)})
+		}
+	}
+
+	return mailer.Child{
+		ContentType: header.Get("Content-Type"),
+		Headers:     headers,
+		Part:        part,
+	}, nil
+}
+
+func decodeTransferEncoding(cte string, body io.Reader) io.Reader {
+	switch normalizeCTE(cte) {
+	case "quoted-printable":
+		return quotedprintable.NewReader(body)
+	case "base64":
+		return base64.NewDecoder(base64.StdEncoding, body)
+	default:
+		return body
+	}
+}
+
+// since we're doing mail hardcore style, might as well use some kind of
+// charset that is "sinnvoll", like utf-8, instead of microsoft-09150912830981240
+// or whatever other 500 charsets people come up with.
+func decodeText(raw []byte, charset string) string {
+	charset = normalizeCTE(charset)
+	if charset == "" || charset == "us-ascii" || charset == "ascii" || charset == "utf-8" {
+		return string(raw)
+	}
+	enc, err := htmlindex.Get(charset)
+	if err != nil {
+		return string(raw)
+	}
+	decoded, err := enc.NewDecoder().Bytes(raw)
+	if err != nil {
+		return string(raw)
+	}
+	return string(decoded)
 }
 
 func getAddressList(m *mail.Message, headername string) ([]mail.Address, error) {
@@ -289,4 +453,10 @@ func decodeRFC2047(s string) string {
 		return s // fallback to raw
 	}
 	return d
+}
+
+// Of course there exists mails that use the fact that cte is case-insensitive
+// AND CAN HAVE WHITESPACES sprinkled in... :) Good RFCs
+func normalizeCTE(cte string) string {
+	return strings.ToLower(strings.TrimSpace(cte))
 }

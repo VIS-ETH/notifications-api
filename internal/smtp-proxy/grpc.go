@@ -31,11 +31,6 @@ func buildGrpcRequestFromMail(mail *mailer.Mail) (*pb.Mail, error) {
 		extraHeaders = append(extraHeaders, &pb.ExtraHeader{Key: vs.Key, Value: vs.Value})
 	}
 
-	rawMail, ok := mail.Body.(mailer.Binary)
-	if !ok {
-		return nil, fmt.Errorf("mail body is not of type Binary, got %T", mail.Body)
-	}
-
 	pbMail := &pb.Mail{
 		Subject:      mail.Subject,
 		From:         internal.MakePbAddress(mail.From.Name, mail.From.Address),
@@ -45,10 +40,68 @@ func buildGrpcRequestFromMail(mail *mailer.Mail) (*pb.Mail, error) {
 		ReplyTo:      replyTo,
 		ExtraHeaders: extraHeaders,
 		ContentType:  &mail.ContentType,
-		BodyOneof: &pb.Mail_RawBody{
-			RawBody: rawMail.Content,
-		},
+	}
+
+	switch body := mail.Body.(type) {
+	case mailer.Text:
+		pbMail.BodyOneof = &pb.Mail_PlainText{PlainText: body.Content}
+	case mailer.Binary:
+		pbMail.BodyOneof = &pb.Mail_RawBody{RawBody: body.Content}
+	case mailer.Multipart:
+		pbMimeBody, err := transformMultipartToProto(body)
+		if err != nil {
+			return nil, fmt.Errorf("error while transforming multipart")
+		}
+		pbMail.BodyOneof = &pb.Mail_MultipartBody{MultipartBody: pbMimeBody}
+	default:
+		return nil, fmt.Errorf("unsupported mail body type: %T", mail.Body)
 	}
 
 	return pbMail, nil
+}
+
+func transformMultipartToProto(mp mailer.Multipart) (*pb.MimeBody, error) {
+	parts := make([]*pb.MimePart, len(mp.Children))
+	for i, child := range mp.Children {
+		pbPart, err := transformPartToProto(child.Part, child.ContentType, child.Headers)
+		if err != nil {
+			return nil, err
+		}
+		parts[i] = pbPart
+	}
+	return &pb.MimeBody{Parts: parts}, nil
+}
+
+func transformPartToProto(part mailer.Part, contentType string, headers []mailer.Header) (*pb.MimePart, error) {
+	var pbHeaders []*pb.ExtraHeader
+	for _, h := range headers {
+		pbHeaders = append(pbHeaders, &pb.ExtraHeader{Key: h.Key, Value: h.Value})
+	}
+
+	var ctPtr *string
+	if contentType != "" {
+		ctPtr = &contentType
+	}
+
+	pbPart := &pb.MimePart{
+		ContentType: ctPtr,
+		Headers:     pbHeaders,
+	}
+
+	switch p := part.(type) {
+	case mailer.Text:
+		pbPart.ContentOneof = &pb.MimePart_Content{Content: p.Content}
+	case mailer.Binary:
+		pbPart.ContentOneof = &pb.MimePart_ContentBytes{ContentBytes: p.Content}
+	case mailer.Multipart:
+		nestedBody, err := transformMultipartToProto(p)
+		if err != nil {
+			return nil, fmt.Errorf("error while transforming multipart")
+		}
+		pbPart.ContentOneof = &pb.MimePart_Nested{Nested: nestedBody}
+	default:
+		return nil, fmt.Errorf("unsupported part type: %T", part)
+	}
+
+	return pbPart, nil
 }

@@ -20,7 +20,7 @@ type encodedPart struct {
 //mockery:generate: false
 type Part interface {
 	encode(contentType string, has8BitMimeSupport bool) encodedPart
-	validate() error
+	validate(contentType string) error
 }
 
 type Text struct {
@@ -41,7 +41,13 @@ type Child struct {
 	Part        Part
 }
 
-func (t Text) validate() error {
+func (t Text) validate(contentType string) error {
+	if contentTypeRequires7or8Bit(contentType) {
+		isAcceptable7Bit, _ := isAcceptable7or8Bit([]byte(t.Content))
+		if !isAcceptable7Bit {
+			return fmt.Errorf("binary part with content type %q must be 7bit or 8bit, but is not", contentType)
+		}
+	}
 	if !utf8.ValidString(t.Content) {
 		return fmt.Errorf("invalid UTF-8 content in text part")
 	}
@@ -62,7 +68,15 @@ func (t Text) encode(contentType string, has8BitMimeSupport bool) encodedPart {
 	}
 }
 
-func (t Binary) validate() error { return nil }
+func (t Binary) validate(contentType string) error {
+	if contentTypeRequires7or8Bit(contentType) {
+		isAcceptable7Bit, _ := isAcceptable7or8Bit(t.Content)
+		if !isAcceptable7Bit {
+			return fmt.Errorf("binary part with content type %q must be 7bit or 8bit, but is not", contentType)
+		}
+	}
+	return nil
+}
 
 func (t Binary) encode(contentType string, has8BitMimeSupport bool) encodedPart {
 	encodedBody, contentTransferEncoding := encodeBytes(has8BitMimeSupport, t.Content)
@@ -73,7 +87,7 @@ func (t Binary) encode(contentType string, has8BitMimeSupport bool) encodedPart 
 	}
 }
 
-func (m Multipart) validate() error {
+func (m Multipart) validate(contentType string) error {
 	var validationErrors []error
 
 	for _, c := range m.Children {
@@ -115,7 +129,7 @@ func (m Multipart) validate() error {
 			}
 		}
 
-		if err := c.Part.validate(); err != nil {
+		if err := c.Part.validate(c.ContentType); err != nil {
 			validationErrors = append(validationErrors, err)
 		}
 	}

@@ -44,6 +44,7 @@ services:
       NOTIFICATIONS_UNAUTHENTICATED: true
 
       GRPC_CLIENT_AUTH_MODE: none
+      GRPC_CLIENT_USE_QUEUING: false
       GRPC_SERVER_INSECURE: true
       GRPC_SERVER_ADDRESS: notifications-api:6781
 

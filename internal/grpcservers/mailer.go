@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"mime"
 	"net/mail"
-	"net/textproto"
 	"time"
 
 	pb "gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/generated/pb/sip/notifications"
@@ -45,7 +44,6 @@ func pbMailToValidatedMail(mailReq *pb.Mail, from mail.Address) (*mailer.Mail, e
 		return nil, fmt.Errorf("could not convert 'bcc' address list: %v", err)
 	}
 
-	hasContentTypeHeader, contentTypeHeader := false, ""
 	var headers []mailer.Header
 	for _, values := range mailReq.ExtraHeaders {
 		if values == nil {
@@ -59,28 +57,21 @@ func pbMailToValidatedMail(mailReq *pb.Mail, from mail.Address) (*mailer.Mail, e
 		if mailer.IsHeaderKeyReserved(values.Key) {
 			return nil, fmt.Errorf("extra header key %q is reserved and cannot be set", values.Key)
 		}
-
-		canonicalKey := textproto.CanonicalMIMEHeaderKey(values.Key)
-
-		switch canonicalKey {
-		case "Content-Type":
-			hasContentTypeHeader = true
-			contentTypeHeader = values.Value
-			continue
-		}
 	}
 
-	_, _, parseMediaTypeErr := mime.ParseMediaType(contentTypeHeader)
-	if hasContentTypeHeader && parseMediaTypeErr != nil {
-		return nil, fmt.Errorf("failed to parse content type header: %v", err)
+	if mailReq.ContentType != nil {
+		_, _, parseMediaTypeErr := mime.ParseMediaType(*mailReq.ContentType)
+		if parseMediaTypeErr != nil {
+			return nil, fmt.Errorf("failed to parse content type header: %v", err)
+		}
 	}
 	var bodyContent string
 	var mailBody mailer.Part
 
 	switch body := mailReq.BodyOneof.(type) {
 	case *pb.Mail_PlainText:
-		if hasContentTypeHeader {
-			bodyContent = contentTypeHeader
+		if mailReq.ContentType != nil {
+			bodyContent = *mailReq.ContentType
 		} else {
 			bodyContent = "text/plain; charset=utf-8"
 		}
@@ -88,7 +79,7 @@ func pbMailToValidatedMail(mailReq *pb.Mail, from mail.Address) (*mailer.Mail, e
 			Content: body.PlainText,
 		}
 	case *pb.Mail_SimpleMail:
-		if hasContentTypeHeader {
+		if mailReq.ContentType != nil {
 			return nil, fmt.Errorf("content type header is not allowed to be set for simple mail body")
 		}
 		if body.SimpleMail.PlainText == nil && body.SimpleMail.Html == nil {
@@ -144,8 +135,8 @@ func pbMailToValidatedMail(mailReq *pb.Mail, from mail.Address) (*mailer.Mail, e
 			}
 		}
 	case *pb.Mail_MultipartBody:
-		if hasContentTypeHeader {
-			bodyContent = contentTypeHeader
+		if mailReq.ContentType != nil {
+			bodyContent = *mailReq.ContentType
 		} else {
 			bodyContent = "multipart/mixed"
 		}
@@ -155,8 +146,8 @@ func pbMailToValidatedMail(mailReq *pb.Mail, from mail.Address) (*mailer.Mail, e
 		}
 		mailBody = transformedMultipart
 	case *pb.Mail_RawBody:
-		if hasContentTypeHeader {
-			bodyContent = contentTypeHeader
+		if mailReq.ContentType != nil {
+			bodyContent = *mailReq.ContentType
 		} else {
 			bodyContent = "application/octet-stream"
 		}

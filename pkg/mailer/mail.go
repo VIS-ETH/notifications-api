@@ -113,7 +113,7 @@ func (m *Mail) ValidateMail() error {
 		}
 	}
 
-	if err := m.Body.validate(); err != nil {
+	if err := m.Body.validate(m.ContentType); err != nil {
 		validationErrors = append(validationErrors, fmt.Errorf("invalid body: %v", err))
 	}
 
