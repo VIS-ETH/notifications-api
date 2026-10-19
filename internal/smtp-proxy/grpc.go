@@ -52,7 +52,7 @@ func buildGrpcRequestFromMail(mail *mailer.Mail) (*pb.Mail, error) {
 	case mailer.Multipart:
 		pbMimeBody, err := transformMultipartToProto(body)
 		if err != nil {
-			return nil, fmt.Errorf("error while transforming multipart")
+			return nil, fmt.Errorf("error while transforming multipart: %v", err)
 		}
 		pbMail.BodyOneof = &pb.Mail_MultipartBody{MultipartBody: pbMimeBody}
 	default:
@@ -98,7 +98,7 @@ func transformPartToProto(part mailer.Part, contentType string, headers []mailer
 	case mailer.Multipart:
 		nestedBody, err := transformMultipartToProto(p)
 		if err != nil {
-			return nil, fmt.Errorf("error while transforming multipart")
+			return nil, fmt.Errorf("error while transforming multipart: %v", err)
 		}
 		pbPart.ContentOneof = &pb.MimePart_Nested{Nested: nestedBody}
 	default:

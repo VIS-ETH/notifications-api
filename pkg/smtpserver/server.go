@@ -362,7 +362,7 @@ func parsePart(header textproto.MIMEHeader, body io.Reader) (mailer.Part, error)
 	// try and detect proper, nice text.
 	if strings.HasPrefix(mediaType, "text/") {
 		if text := decodeText(raw, params["charset"]); utf8.ValidString(text) {
-			return mailer.Text{Content: text}, nil
+			return mailer.Text{Content: strings.ReplaceAll(text, "\r\n", "\n")}, nil
 		}
 	}
 	return mailer.Binary{Content: raw}, nil
@@ -390,11 +390,14 @@ func parseChild(header textproto.MIMEHeader, body io.Reader) (mailer.Child, erro
 		}
 	}
 
-	return mailer.Child{
+	c := mailer.Child{
 		ContentType: header.Get("Content-Type"),
-		Headers:     headers,
 		Part:        part,
-	}, nil
+	}
+	if len(headers) > 0 {
+		c.Headers = headers
+	}
+	return c, nil
 }
 
 func decodeTransferEncoding(cte string, body io.Reader) io.Reader {

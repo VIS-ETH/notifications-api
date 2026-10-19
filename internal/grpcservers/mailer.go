@@ -236,11 +236,14 @@ func transformPbMimeBodyToMailerBody(mimeBody *pb.MimeBody) (mailer.Multipart, e
 				Value: header.Value,
 			})
 		}
-		children = append(children, mailer.Child{
+		c := mailer.Child{
 			ContentType: contentType,
-			Headers:     headers,
 			Part:        trasformedPart,
-		})
+		}
+		if len(headers) > 0 {
+			c.Headers = headers
+		}
+		children = append(children, c)
 	}
 
 	return mailer.Multipart{

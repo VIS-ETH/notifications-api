@@ -139,7 +139,7 @@ func GetSMTPServer(config SMTPProxyConfig, client pb.MailServiceClient) (*smtp.S
 
 			respAddr := resp.From.GetMailAddress()
 			if respAddr == nil {
-				return fmt.Errorf("gRPC response does not contain a valid mail address")
+				return fmt.Errorf("gRPC response does not contain a valid from mail address")
 			}
 
 			if respAddr.Address != mail.From.Address {
