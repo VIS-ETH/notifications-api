@@ -93,7 +93,7 @@ func encodeBytes(has8BitMimeSupport bool, b []byte) (string, string) {
 		return string(b), "7bit"
 	}
 
-	if isAcceptable8Bit {
+	if isAcceptable8Bit && has8BitMimeSupport {
 		return string(b), "8bit"
 	}
 

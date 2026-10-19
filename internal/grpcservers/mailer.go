@@ -62,7 +62,7 @@ func pbMailToValidatedMail(mailReq *pb.Mail, from mail.Address) (*mailer.Mail, e
 	if mailReq.ContentType != nil {
 		_, _, parseMediaTypeErr := mime.ParseMediaType(*mailReq.ContentType)
 		if parseMediaTypeErr != nil {
-			return nil, fmt.Errorf("failed to parse content type header: %v", err)
+			return nil, fmt.Errorf("failed to parse content type header %q: %v", *mailReq.ContentType, parseMediaTypeErr)
 		}
 	}
 	var bodyContent string

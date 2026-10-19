@@ -273,9 +273,11 @@ ccRecipientsOk:
 	parsedMail.Bcc = bcc
 
 	parsedMail.ContentType = message.Header.Get("Content-Type")
-	parsedMail.Date, err = time.Parse(time.RFC1123Z, message.Header.Get("Date"))
-	if err != nil {
-		return fmt.Errorf("parsing date header failed: %v", err)
+	if dateHeader := message.Header.Get("Date"); dateHeader != "" {
+		parsedMail.Date, err = time.Parse(time.RFC1123Z, dateHeader)
+		if err != nil {
+			return fmt.Errorf("parsing date header failed: %v", err)
+		}
 	}
 
 	if message.Header.Get("Mime-Version") != "" {

@@ -39,7 +39,9 @@ func buildGrpcRequestFromMail(mail *mailer.Mail) (*pb.Mail, error) {
 		Bcc:          bcc,
 		ReplyTo:      replyTo,
 		ExtraHeaders: extraHeaders,
-		ContentType:  &mail.ContentType,
+	}
+	if mail.ContentType != "" {
+		pbMail.ContentType = &mail.ContentType
 	}
 
 	switch body := mail.Body.(type) {
