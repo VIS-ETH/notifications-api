@@ -98,7 +98,7 @@ require (
 	github.com/sqlc-dev/sqlc v1.31.1 // indirect
 	github.com/stretchr/objx v0.8.0 // indirect
 	github.com/tetratelabs/wazero v1.11.0 // indirect
-	github.com/vektra/mockery/v3 v3.7.1 // indirect
+	github.com/vektra/mockery/v3 v3.8.1 // indirect
 	github.com/wasilibs/go-pgquery v0.0.0-20250409022910-10ac41983c07 // indirect
 	github.com/wasilibs/wazero-helpers v0.0.0-20240620070341-3dff1577cd52 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
