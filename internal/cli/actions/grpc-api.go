@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/MicahParks/keyfunc/v3"
@@ -65,26 +66,41 @@ func HandleNotificationsAPI(ctx context.Context, c *config.APIConfig) error {
 		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(c.OIDCConfig.OIDCIssuerURL, c.OIDCConfig.OIDCClientID, jwtKeyFunc)),
 	)
 
-	var auth *mailer.SMTPAuth
-	if (c.SMTPTargetConfig.AuthUsername == "") != (c.SMTPTargetConfig.AuthPassword == "") {
-		logrus.Fatalf("One of plain auth username or password was set, but not both...")
-	}
-	if c.SMTPTargetConfig.AuthPassword != "" {
-		auth = &mailer.SMTPAuth{
-			Username: c.SMTPTargetConfig.AuthUsername,
-			Password: c.SMTPTargetConfig.AuthPassword,
-		}
-	}
+	var mailSender mailer.MailSender
+	var err error
 
-	mailSender, err := mailer.NewSMTPMailSender(
-		c.SMTPTargetConfig.DefaultSenderAddress,
-		c.SMTPTargetConfig.DefaultSenderName,
-		c.SMTPTargetConfig.Endpoint,
-		auth,
-		c.SMTPTargetConfig.MessageIDSuffix,
-	)
-	if err != nil {
-		logrus.Fatalf("Failed to create mail sender: %v", err)
+	if strings.ToLower(c.BackendSelection) == string(config.MailerBackendSMTP) {
+		var auth *mailer.SMTPAuth
+		if (c.SMTPTargetConfig.AuthUsername == "") != (c.SMTPTargetConfig.AuthPassword == "") {
+			logrus.Fatalf("One of plain auth username or password was set, but not both...")
+		}
+		if c.SMTPTargetConfig.AuthPassword != "" {
+			auth = &mailer.SMTPAuth{
+				Username: c.SMTPTargetConfig.AuthUsername,
+				Password: c.SMTPTargetConfig.AuthPassword,
+			}
+		}
+
+		mailSender, err = mailer.NewSMTPMailSender(
+			c.SMTPTargetConfig.DefaultSenderAddress,
+			c.SMTPTargetConfig.DefaultSenderName,
+			c.SMTPTargetConfig.Endpoint,
+			auth,
+			c.SMTPTargetConfig.MessageIDSuffix,
+		)
+		if err != nil {
+			logrus.Fatalf("Failed to create SMTP mail sender: %v", err)
+		}
+	} else if strings.ToLower(c.BackendSelection) == string(config.MailerBackendMsGraphAPI) {
+		mailSender = mailer.NewGraphAPIMailSender(
+			c.MsGraphAPITargetConfig.TenantID,
+			c.MsGraphAPITargetConfig.ClientID,
+			c.MsGraphAPITargetConfig.ClientSecret,
+			c.MsGraphAPITargetConfig.SenderAddress,
+			c.MsGraphAPITargetConfig.MessageIDSuffix,
+		)
+	} else {
+		return fmt.Errorf("invalid mailer backend selection: %s", c.BackendSelection)
 	}
 
 	mailServer := grpcservers.NewMailServer(

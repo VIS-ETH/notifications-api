@@ -1,6 +1,7 @@
 package mailer
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -56,12 +57,28 @@ func (g *GraphAPIMailSender) TransmitMail(ctx context.Context, m *Mail) error {
 	if err != nil {
 		return fmt.Errorf("failed to build send-mail-request: %v", err)
 	}
+	accessToken, err := g.tp.GetAccessToken()
+	if err != nil {
+		return fmt.Errorf("failed to get access token for graph api: %v", err)
+	}
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", *accessToken))
+	req.Header.Add("Content-Type", "text/plain")
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("post request to send mail failed: %v", err)
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
+	} else {
+		g.logger.Errorf("failed to send mail via graph api, status code: %d", resp.StatusCode)
+		var respBody bytes.Buffer
+		defer func() { _ = resp.Body.Close() }()
+		if _, err := respBody.ReadFrom(resp.Body); err != nil {
+			g.logger.Errorf("failed to read response body: %v", err)
+			return fmt.Errorf("server did not accept encoded mail! status code %d, failed to read response body: %v", resp.StatusCode, err)
+		}
+		g.logger.Errorf("response body: %s", respBody.String())
 	}
 	return fmt.Errorf("server did not accept encoded mail! status code %d", resp.StatusCode)
 }

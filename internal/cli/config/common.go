@@ -15,6 +15,16 @@ type ObservabilityConfig struct {
 	PrometheusExporterAddr string
 }
 
+type MsGraphAPITargetConfig struct {
+	TenantID        string
+	ClientID        string
+	ClientSecret    string `confidential:"true"`
+	SPName          string
+	SenderName      string
+	SenderAddress   string
+	MessageIDSuffix string
+}
+
 type SMTPClientConfig struct {
 	Endpoint             string
 	DefaultSenderName    string

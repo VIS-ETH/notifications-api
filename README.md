@@ -279,7 +279,7 @@ curl -v -X POST "https://graph.microsoft.com/v1.0/users/$SENDER_EMAIL/sendMail" 
     "toRecipients": [
       {
         "emailAddress": {
-          "address": "$RCPT_EMAIL"
+          "address": "'"$RCPT_EMAIL"'"
         }
       }
     ]
