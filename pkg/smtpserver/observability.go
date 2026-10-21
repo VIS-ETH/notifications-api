@@ -19,7 +19,7 @@ func getSMTPObservability() (*SMTPObservability, error) {
 	}
 	meter := otel.Meter("smtp-server-meter")
 	counter, err := meter.Int64Counter(
-		"mail_sender_total_mail_count",
+		"smtp_server_total_received_mail_count",
 		metric.WithDescription("Total mails received by smtp server"),
 		metric.WithUnit("{call}"),
 	)

@@ -19,8 +19,15 @@ import (
 	"github.com/emersion/go-smtp"
 	"github.com/sirupsen/logrus"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/text/encoding/htmlindex"
 )
+
+var smtpServerTracer = otel.Tracer("smtpserver/receiver")
 
 type authHandler func(ctx context.Context, username, password string) (context.Context, error)
 
@@ -69,9 +76,20 @@ func (bkd *Backend) NewSession(c *smtp.Conn) (smtp.Session, error) {
 		"component": "smtpserver",
 	})
 
+	connCtx, connSpan := smtpServerTracer.Start(
+		context.Background(), "smtp.Connection",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			semconv.NetworkProtocolName("smtp"),
+			semconv.NetworkPeerAddress(c.Conn().RemoteAddr().String()),
+		),
+	)
+
 	s := &session{
-		backend: bkd,
-		logger:  logger,
+		backend:  bkd,
+		logger:   logger,
+		rootCtx:  connCtx,
+		connSpan: connSpan,
 	}
 	s.Reset()
 	return s, nil
@@ -85,8 +103,11 @@ type session struct {
 	recipients []string
 	data       []byte
 
+	connSpan        trace.Span
 	ctx             context.Context
+	rootCtx         context.Context
 	isAuthenticated bool
+	hadError        bool
 }
 
 func (s *session) AuthMechanisms() []string {
@@ -129,6 +150,14 @@ func (s *session) AuthPlain(username, password string) error {
 }
 
 func (s *session) Logout() error {
+	if s.connSpan != nil {
+		if s.hadError {
+			s.connSpan.SetStatus(codes.Error, "session had at least one failed message")
+		} else {
+			s.connSpan.SetStatus(codes.Ok, "session closed")
+		}
+		s.connSpan.End()
+	}
 	return nil
 }
 
@@ -136,7 +165,7 @@ func (s *session) Reset() {
 	s.from = ""
 	s.recipients = nil
 	s.data = nil
-	s.ctx = context.Background()
+	s.ctx = s.rootCtx
 	s.isAuthenticated = false
 }
 
@@ -156,10 +185,40 @@ func (s *session) Rcpt(to string, opts *smtp.RcptOptions) error {
 	return nil
 }
 
-func (s *session) Data(r io.Reader) error {
+func (s *session) Data(r io.Reader) (err error) {
 	if s.backend.requireAuth && !s.isAuthenticated {
 		return smtp.ErrAuthRequired
 	}
+
+	ctx, span := smtpServerTracer.Start(
+		s.ctx, "smtp.ReceiveMail",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("smtp.from", s.from),
+			attribute.Int("smtp.recipient_count", len(s.recipients)),
+		),
+	)
+	defer span.End()
+	defer func() {
+		if err != nil {
+			s.hadError = true
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			s.logger.Warnf("Failed to receive mail: %v", err)
+			return
+		}
+		span.SetStatus(codes.Ok, "mail received")
+
+		so, soErr := getSMTPObservability()
+		if soErr != nil {
+			s.logger.Warnf("Failed to get smtp server observability! %v", soErr)
+			return
+		}
+		(*so.counter).Add(ctx, 1)
+
+		s.logger.Info("Received mail successfully")
+	}()
+
 	message, err := mail.ReadMessage(r)
 	if err != nil {
 		return fmt.Errorf("reading message from %s to [%s] failed: %v", s.from, strings.Join(s.recipients, ", "), err)
@@ -225,6 +284,7 @@ ccRecipientsOk:
 			return fmt.Errorf("invalid message id header %q", messageId)
 		}
 		parsedMail.MessageID = messageId[1 : len(messageId)-1]
+		span.SetAttributes(attribute.String("smtp.message_id", parsedMail.MessageID))
 	}
 
 	extraHeaders := make(map[string][]string)
@@ -298,7 +358,7 @@ ccRecipientsOk:
 		return fmt.Errorf("failed to validate parsed mail: %v", err)
 	}
 
-	err = s.backend.handleMessage(s.ctx, parsedMail)
+	err = s.backend.handleMessage(ctx, parsedMail)
 	if err != nil {
 		return fmt.Errorf("handling message from %s to [%s] failed: %v", s.from, strings.Join(s.recipients, ", "), err)
 	}

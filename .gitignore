@@ -9,6 +9,9 @@ generated/
 
 
 .env.local
+.env.staging
+.env.prod
+
 /configs/local-observability/data
 /data
 
