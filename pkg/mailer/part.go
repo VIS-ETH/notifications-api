@@ -45,7 +45,7 @@ func (t Text) validate(contentType string) error {
 	if contentTypeRequires7or8Bit(contentType) {
 		isAcceptable7Bit, _ := isAcceptable7or8Bit([]byte(t.Content))
 		if !isAcceptable7Bit {
-			return fmt.Errorf("binary part with content type %q must be 7bit or 8bit, but is not", contentType)
+			return fmt.Errorf("text part with content type %q must be 7bit or 8bit, but is not", contentType)
 		}
 	}
 	if !utf8.ValidString(t.Content) {

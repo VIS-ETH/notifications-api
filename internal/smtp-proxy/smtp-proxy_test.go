@@ -165,6 +165,48 @@ func TestTLS(t *testing.T) {
 	})
 }
 
+func TestSMTPProxyRejectsNonReencodable(t *testing.T) {
+	te := testutil.NewTestEnvironment(t)
+	defer te.Cancel()
+
+	authMockSrv := te.StartAuthMockServer()
+
+	mockGrpcServer := te.GetMockMailerGRPCServer(authMockSrv)
+	grpcServer := mockGrpcServer.GrpcServer
+
+	client := te.StartGRPCMailServer(grpcServer)
+
+	smtpSrv := te.GetSMTPProxy(authMockSrv, nil, client)
+	smtpListening := te.StartSMTPProxyServer(te.Ctx, smtpSrv)
+
+	te.TestSMTPClient(smtpListening, func(addr string) error {
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			return fmt.Errorf("failed to parse SMTP server address %q: %w", addr, err)
+		}
+		smtpAuth := smtp.PlainAuth("", authmock.AuthMockUserUsername, authmock.AuthMockUserPassword, host)
+		msg := []byte(
+			"From: test@local.local\r\n" +
+				"To: test2@local.local\r\n" +
+				// The following few headers should cause issues!
+				// Encoding must be downgradable to 7bit by design... because yeah, f mail...
+				"Content-Type: message/rfc822\r\n" +
+				"Content-Transfer-Encoding: 8bit\r\n" +
+				"Mime-Version: 1.0\r\n" +
+				"Subject: Test\r\n" +
+				"\r\n" +
+				"This is a täst email.\r\n",
+		)
+
+		err = smtp.SendMail(addr, smtpAuth, "test@local.local", []string{"test2@local.local"}, msg)
+		assert.Error(t, err, "This should have failed! SMTP Proxy MUST be able to re-encode everything, so...")
+
+		te.Cancel()
+
+		return nil
+	})
+}
+
 func TestMailDecode(t *testing.T) {
 	mailConversionTests := []struct {
 		name        string
@@ -365,7 +407,7 @@ Alice
 					return fmt.Errorf("failed to write email data: %w", err)
 				}
 
-				t.Logf("SMTP client finished sending email, err: %v", err)
+				t.Logf("SMTP client finished sending email")
 
 				mockMailer.AssertExpectations(t)
 				querier.AssertExpectations(t)

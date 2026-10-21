@@ -24,10 +24,7 @@ type MockMailGrpcServer struct {
 	GrpcServer *grpc.Server
 }
 
-func (te *TestEnvironment) GetMockMailerGRPCServer(authMockSrv *httptest.Server) MockMailGrpcServer {
-	querier := mockery_sql.NewMockQuerier(te.T)
-	mockMailer := mockery_mailer.NewMockMailSender(te.T)
-
+func getGrpcAuthOpts(authMockSrv *httptest.Server) []grpc.ServerOption {
 	var opts []grpc.ServerOption
 	if authMockSrv != nil {
 		k, err := keyfunc.NewDefaultCtx(context.Background(), []string{
@@ -38,8 +35,14 @@ func (te *TestEnvironment) GetMockMailerGRPCServer(authMockSrv *httptest.Server)
 		}
 		opts = append(opts, grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(authMockSrv.URL, authmock.AuthMockClientID, k.Keyfunc)))
 	}
+	return opts
+}
 
-	grpcServer := grpc.NewServer(opts...)
+func (te *TestEnvironment) GetMockMailerGRPCServer(authMockSrv *httptest.Server) MockMailGrpcServer {
+	querier := mockery_sql.NewMockQuerier(te.T)
+	mockMailer := mockery_mailer.NewMockMailSender(te.T)
+
+	grpcServer := grpc.NewServer(getGrpcAuthOpts(authMockSrv)...)
 
 	mailGrpcServer := grpcservers.NewMailServer(
 		false,
@@ -67,6 +70,7 @@ func (te *TestEnvironment) StartGRPCMailServer(grpcServer *grpc.Server) pb.MailS
 		te.T.Logf("Serving gRPC at %s", l.Addr().String())
 		err := grpcServer.Serve(l)
 		if err != nil {
+			te.T.Logf("gRPC server stopped serving: %v", err)
 			return fmt.Errorf("failed to serve: %v", err)
 		}
 		return nil
