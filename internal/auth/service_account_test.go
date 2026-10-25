@@ -213,12 +213,15 @@ func TestFailures(t *testing.T) {
 func TestTokenEndpointScope(t *testing.T) {
 	testWithChecks(
 		t, func(req *http.Request) (*http.Response, error) {
-			query := req.URL.Query()
-			scopes := query["scope"]
+			err := req.ParseForm()
+			if err != nil {
+				return nil, fmt.Errorf("Failed to parse form: %v", err)
+			}
+			scopes := req.Form["scope"]
 
 			if len(scopes) != 1 {
 				return nil, fmt.Errorf("Scope was expected to not be empty, found %d instances", len(scopes))
-			} else if actualScope := query.Get("scope"); TestClientScope != actualScope {
+			} else if actualScope := scopes[0]; TestClientScope != actualScope {
 				return nil, fmt.Errorf("Scope was expected to be '%s', not '%s'", TestClientScope, actualScope)
 			} else if req.URL.Host != TestTokenEndpointHost {
 				return nil, fmt.Errorf("Host was expected to be '%s', was '%s'", TestTokenEndpointHost, req.URL.Host)

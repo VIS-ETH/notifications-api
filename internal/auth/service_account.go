@@ -105,7 +105,7 @@ func (tp *OidcTokenProvider) refreshAccessToken() error {
 
 	resp, err := tp.httpClient.Do(req)
 	if err != nil {
-		log.Printf("failed to create a obtain access token from (%s) for client (%s): %v", tp.tokenEndpoint, tp.sa.ClientID, err)
+		log.Printf("failed to obtain access token from (%s) for client (%s): %v", tp.tokenEndpoint, tp.sa.ClientID, err)
 		return errors.New("failed to retrieve access token")
 	}
 	defer func() { err = errors.Join(err, resp.Body.Close()) }()
