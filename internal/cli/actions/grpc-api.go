@@ -23,6 +23,7 @@ import (
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/mailer"
 	"gitlab.ethz.ch/vseth/1100-fv/1116-vis/cit/sip-vis-cit-apps/notifications-api/pkg/slack"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/propagation"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -62,7 +63,9 @@ func HandleNotificationsAPI(ctx context.Context, c *config.APIConfig) error {
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.StatsHandler(otelgrpc.NewServerHandler(
+			otelgrpc.WithPropagators(propagation.TraceContext{}),
+		)),
 		grpc.UnaryInterceptor(auth.GetGrpcAuthInterceptor(c.OIDCConfig.OIDCIssuerURL, c.OIDCConfig.OIDCClientID, jwtKeyFunc)),
 	)
 
