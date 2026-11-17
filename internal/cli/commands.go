@@ -125,13 +125,19 @@ func withObservability(rootConfig *config.CommonConfig) Middleware {
 		return func(cmd *cobra.Command, args []string) (err error) {
 			ctx := cmd.Context()
 
-			res, err := resource.Merge(resource.Default(),
-				resource.NewWithAttributes(
-					semconv.SchemaURL,
-					semconv.ServiceName(cmd.Use),
-				))
+			serviceRes, err := resource.New(ctx,
+				resource.WithAttributes(
+					semconv.ServiceName("notifications-api"),
+				),
+				resource.WithFromEnv(),
+			)
 			if err != nil {
-				return fmt.Errorf("failed to create resource: %w", err)
+				return fmt.Errorf("failed to create service resource: %w", err)
+			}
+
+			res, err := resource.Merge(resource.Default(), serviceRes)
+			if err != nil {
+				return fmt.Errorf("failed to merge resource: %w", err)
 			}
 
 			if rootConfig.Observability.ExportOtelTraces {
