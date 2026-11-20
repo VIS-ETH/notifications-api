@@ -52,7 +52,7 @@ services:
       SMTP_SERVER_ADDRESS: ":2226"
 
   postgres:
-    image: postgres:18-trixie
+    image: postgres:19-trixie
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
